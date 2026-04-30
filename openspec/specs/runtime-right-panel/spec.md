@@ -18,7 +18,7 @@ The runtime workbench SHALL render a right panel alongside the existing sidebar 
 - **AND** the right panel SHALL not prevent preview scrolling or render-error display
 
 ### Requirement: Props JSON editor
-The right panel SHALL display the current props as editable formatted JSON.
+The right panel SHALL display the current props as editable formatted JSON and SHALL provide reset and copy actions for that JSON.
 
 #### Scenario: Selected variant props are shown as JSON
 - **WHEN** a case and variant with props are selected
@@ -40,6 +40,11 @@ The right panel SHALL display the current props as editable formatted JSON.
 - **WHEN** the user resets props from the right panel
 - **THEN** the runtime SHALL replace current props with a fresh copy of the selected variant props
 - **AND** the right panel SHALL show the restored props JSON
+
+#### Scenario: Props JSON can be copied
+- **WHEN** the user copies props from the right panel
+- **THEN** the runtime SHALL request writing the current props editor text to the clipboard
+- **AND** the runtime SHALL NOT change current props, selected case, selected variant, selected wrapper, or preview state
 
 ### Requirement: Props validation feedback
 The right panel SHALL show validation feedback for edited props.

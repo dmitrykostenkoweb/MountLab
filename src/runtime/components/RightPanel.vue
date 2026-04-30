@@ -61,6 +61,7 @@ function formatPayload(payload: unknown): string {
         :disabled="!selectedCase"
         spellcheck="false"
         @input="emit('update:propsJsonText', ($event.target as HTMLTextAreaElement).value)"
+        @change="emit('update:propsJsonText', ($event.target as HTMLTextAreaElement).value)"
       />
 
       <p v-if="propsJsonParseError" class="ml-right-panel__message ml-right-panel__message--error">
