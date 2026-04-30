@@ -4,6 +4,7 @@ import type { ComponentCase, MountLabConfig } from '../core/types.js'
 import Sidebar from './components/Sidebar.vue'
 import TopBar from './components/TopBar.vue'
 import PreviewArea from './components/PreviewArea.vue'
+import RightPanel from './components/RightPanel.vue'
 import { useWorkbenchState } from './composables/useWorkbenchState.js'
 
 const cases = inject<ComponentCase[]>('mountlab:cases', [])
@@ -35,8 +36,23 @@ const workbenchState = useWorkbenchState(cases, config)
         :selected-variant="workbenchState.selectedVariant.value"
         :wrapper-component="workbenchState.wrapperComponent.value"
         :current-props="workbenchState.currentProps.value"
+        :event-names="workbenchState.selectedCase.value?.events ?? []"
+        @event-captured="workbenchState.recordEvent"
       />
     </div>
+
+    <RightPanel
+      :selected-case="workbenchState.selectedCase.value"
+      :selected-variant="workbenchState.selectedVariant.value"
+      :props-json-text="workbenchState.propsJsonText.value"
+      :props-json-parse-error="workbenchState.propsJsonParseError.value"
+      :validation-result="workbenchState.propsValidationResult.value"
+      :event-log="workbenchState.eventLog.value"
+      @update:props-json-text="workbenchState.updatePropsJsonText"
+      @reset-props="workbenchState.resetCurrentProps"
+      @copy-props="workbenchState.copyPropsJson"
+      @clear-events="workbenchState.clearEventLog"
+    />
   </div>
 </template>
 
