@@ -14,15 +14,107 @@ const RESOLVED_ENTRY = '\0mountlab:entry'
 async function resolveCasePaths(patterns: string[], root: string): Promise<string[]> {
   const globs = patterns.length > 0 ? patterns : ['src/**/*.case.ts']
   const files = await fg(globs, { cwd: root, absolute: true })
-  return files
+  return files.sort((a, b) => a.localeCompare(b))
 }
 
-function generateCasesModule(casePaths: string[]): string {
+function formatModulePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/')
+}
+
+function formatDiagnosticPath(filePath: string, root: string): string {
+  const relative = path.relative(root, filePath)
+  const displayPath = relative && !relative.startsWith('..') && !path.isAbsolute(relative)
+    ? relative
+    : filePath
+  return formatModulePath(displayPath)
+}
+
+function generateCasesModule(casePaths: string[], root: string): string {
   const imports = casePaths
-    .map((p, i) => `import case${i} from ${JSON.stringify(p)}`)
+    .map((p, i) => `import case${i} from ${JSON.stringify(formatModulePath(p))}`)
     .join('\n')
-  const exports = casePaths.map((_, i) => `case${i}`).join(', ')
-  return `${imports}\nexport const cases = [${exports}]\n`
+  const entries = casePaths
+    .map((p, i) => `  { value: case${i}, path: ${JSON.stringify(formatDiagnosticPath(p, root))} }`)
+    .join(',\n')
+
+  return `${imports}
+
+const caseEntries = [
+${entries}
+]
+
+function formatInvalidCaseMessage(path, problems) {
+  return [
+    '[MountLab] Invalid component case in ' + path,
+    '',
+    'Expected default export created with defineComponentCase:',
+    '- id: non-empty string',
+    '- component: Vue component',
+    '- variants: array',
+    '',
+    'Problems:',
+    ...problems.map(problem => '- ' + problem),
+  ].join('\\n')
+}
+
+function validateCaseEntry(entry) {
+  const candidate = entry.value
+  const problems = []
+
+  if (candidate === null || typeof candidate !== 'object' || Array.isArray(candidate)) {
+    throw new Error(formatInvalidCaseMessage(entry.path, ['default export must be an object']))
+  }
+
+  if (typeof candidate.id !== 'string' || candidate.id.trim() === '') {
+    problems.push('id must be a non-empty string')
+  }
+
+  if (!('component' in candidate) || candidate.component == null) {
+    problems.push('component is required')
+  }
+
+  if (!Array.isArray(candidate.variants)) {
+    problems.push('variants must be an array')
+  }
+
+  if (problems.length > 0) {
+    throw new Error(formatInvalidCaseMessage(entry.path, problems))
+  }
+
+  return candidate
+}
+
+function assertUniqueCaseIds(cases) {
+  const pathsById = new Map()
+
+  for (const item of cases) {
+    const paths = pathsById.get(item.case.id) ?? []
+    paths.push(item.path)
+    pathsById.set(item.case.id, paths)
+  }
+
+  const duplicates = Array.from(pathsById.entries()).filter(([, paths]) => paths.length > 1)
+  if (duplicates.length === 0) return
+
+  const details = duplicates.flatMap(([id, paths]) => [
+    'Duplicate case id "' + id + '"',
+    '',
+    'Found in:',
+    ...paths.map(path => '- ' + path),
+  ])
+
+  throw new Error(['[MountLab] Duplicate component case IDs', '', ...details].join('\\n'))
+}
+
+const validatedEntries = caseEntries.map(entry => ({
+  case: validateCaseEntry(entry),
+  path: entry.path,
+}))
+
+assertUniqueCaseIds(validatedEntries)
+
+export const cases = validatedEntries.map(entry => entry.case)
+`
 }
 
 function generateEntryModule(configPath: string): string {
@@ -115,7 +207,7 @@ export function mountlab(config: MountLabConfig = {}): Plugin {
     async load(id) {
       if (id === RESOLVED_CASES) {
         casePaths = await resolveCasePaths(config.cases ?? [], root)
-        return generateCasesModule(casePaths)
+        return generateCasesModule(casePaths, root)
       }
       if (id === RESOLVED_CONFIG) {
         return `export const config = ${JSON.stringify({ port: config.port ?? 4300 })}`
