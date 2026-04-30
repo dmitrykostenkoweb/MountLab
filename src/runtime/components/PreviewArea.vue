@@ -7,6 +7,7 @@ const props = defineProps<{
   selectedCase: ComponentCase | null
   selectedVariant: ComponentVariant | null
   wrapperComponent: Component | null
+  currentProps: Record<string, unknown>
 }>()
 
 const renderError = ref<string | null>(null)
@@ -37,7 +38,7 @@ watch(
       <component :is="wrapperComponent ?? 'div'" class="ml-preview__wrapper">
         <component
           :is="selectedCase.component"
-          v-bind="selectedVariant?.props ?? {}"
+          v-bind="currentProps"
         />
       </component>
     </template>

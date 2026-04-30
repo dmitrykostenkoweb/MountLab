@@ -1,71 +1,40 @@
 <script setup lang="ts">
-import { computed, inject, ref } from 'vue'
-import type { Component } from 'vue'
-import type { ComponentCase, ComponentVariant, MountLabConfig } from '../core/types.js'
+import { inject } from 'vue'
+import type { ComponentCase, MountLabConfig } from '../core/types.js'
 import Sidebar from './components/Sidebar.vue'
 import TopBar from './components/TopBar.vue'
 import PreviewArea from './components/PreviewArea.vue'
+import { useWorkbenchState } from './composables/useWorkbenchState.js'
 
 const cases = inject<ComponentCase[]>('mountlab:cases', [])
 const config = inject<MountLabConfig>('mountlab:config', {})
 
-const selectedCaseId = ref<string | null>(cases[0]?.id ?? null)
-const selectedVariantId = ref<string | null>(null)
-const selectedWrapperKey = ref<string | null>(null)
-
-const selectedCase = computed(() =>
-  cases.find(c => c.id === selectedCaseId.value) ?? null,
-)
-
-const activeVariantId = computed(() =>
-  selectedVariantId.value ?? selectedCase.value?.variants[0]?.id ?? null,
-)
-
-const selectedVariant = computed<ComponentVariant | null>(() =>
-  selectedCase.value?.variants.find(v => v.id === activeVariantId.value) ?? null,
-)
-
-const activeWrapperKey = computed(() =>
-  selectedWrapperKey.value
-  ?? selectedCase.value?.wrapper
-  ?? config.defaultWrapper
-  ?? null,
-)
-
-const wrapperComponent = computed<Component | null>(() => {
-  if (!activeWrapperKey.value || !config.wrappers) return null
-  return config.wrappers[activeWrapperKey.value] ?? null
-})
-
-function selectCase(id: string) {
-  selectedCaseId.value = id
-  selectedVariantId.value = null
-  selectedWrapperKey.value = null
-}
+const workbenchState = useWorkbenchState(cases, config)
 </script>
 
 <template>
   <div class="ml-workbench">
     <Sidebar
       :cases="cases"
-      :selected-id="selectedCaseId"
-      @select="selectCase"
+      :selected-id="workbenchState.selectedCaseId.value"
+      @select="workbenchState.selectCase"
     />
 
     <div class="ml-workbench__main">
       <TopBar
-        :selected-case="selectedCase"
-        :selected-variant-id="activeVariantId"
-        :selected-wrapper="activeWrapperKey"
+        :selected-case="workbenchState.selectedCase.value"
+        :selected-variant-id="workbenchState.selectedVariantId.value"
+        :selected-wrapper="workbenchState.selectedWrapperKey.value"
         :config="config"
-        @update:selected-variant-id="selectedVariantId = $event"
-        @update:selected-wrapper="selectedWrapperKey = $event"
+        @update:selected-variant-id="workbenchState.selectVariant"
+        @update:selected-wrapper="workbenchState.selectWrapper"
       />
 
       <PreviewArea
-        :selected-case="selectedCase"
-        :selected-variant="selectedVariant"
-        :wrapper-component="wrapperComponent"
+        :selected-case="workbenchState.selectedCase.value"
+        :selected-variant="workbenchState.selectedVariant.value"
+        :wrapper-component="workbenchState.wrapperComponent.value"
+        :current-props="workbenchState.currentProps.value"
       />
     </div>
   </div>
