@@ -98,6 +98,30 @@ function stringifyUnknown(value: unknown): string {
   }
 }
 
+function formatIssuePath(path: unknown): string {
+  if (!Array.isArray(path)) {
+    return stringifyUnknown(path)
+  }
+
+  return path.map(String).join('.')
+}
+
+function normalizeIssue(issue: unknown): ValidationIssue {
+  const issueRecord = issue as {
+    path?: unknown
+    message?: unknown
+    expected?: unknown
+    received?: unknown
+  } | null
+
+  return {
+    path: formatIssuePath(issueRecord?.path),
+    message: stringifyUnknown(issueRecord?.message) || 'Props did not pass validation.',
+    expected: issueRecord?.expected == null ? undefined : stringifyUnknown(issueRecord.expected),
+    received: issueRecord?.received == null ? undefined : stringifyUnknown(issueRecord.received),
+  }
+}
+
 function normalizeIssues(error: unknown): ValidationIssue[] {
   const candidateIssues = (error as { issues?: unknown; errors?: unknown } | null)?.issues
     ?? (error as { errors?: unknown } | null)?.errors
@@ -109,24 +133,7 @@ function normalizeIssues(error: unknown): ValidationIssue[] {
     }]
   }
 
-  return candidateIssues.map((issue): ValidationIssue => {
-    const issueRecord = issue as {
-      path?: unknown
-      message?: unknown
-      expected?: unknown
-      received?: unknown
-    }
-    const path = Array.isArray(issueRecord.path)
-      ? issueRecord.path.map(String).join('.')
-      : stringifyUnknown(issueRecord.path)
-
-    return {
-      path,
-      message: stringifyUnknown(issueRecord.message) || 'Props did not pass validation.',
-      expected: issueRecord.expected == null ? undefined : stringifyUnknown(issueRecord.expected),
-      received: issueRecord.received == null ? undefined : stringifyUnknown(issueRecord.received),
-    }
-  })
+  return candidateIssues.map(normalizeIssue)
 }
 
 function unavailableValidation(): PropsValidationResult {
@@ -163,6 +170,17 @@ function validateProps(
     }
   }
 
+  if (parsedResult == null || typeof parsedResult !== 'object') {
+    return {
+      ok: false,
+      result: {
+        status: 'invalid',
+        message: 'Props validation returned an unsupported result.',
+        issues: [{ path: '', message: 'Props validation returned an unsupported result.' }],
+      },
+    }
+  }
+
   const resultRecord = parsedResult as { success?: unknown; data?: unknown; error?: unknown }
 
   if (resultRecord.success === true) {
@@ -184,6 +202,17 @@ function validateProps(
         status: 'valid',
         message: 'Props match the configured schema.',
         issues: [],
+      },
+    }
+  }
+
+  if (resultRecord.success !== false) {
+    return {
+      ok: false,
+      result: {
+        status: 'invalid',
+        message: 'Props validation returned an unsupported result.',
+        issues: [{ path: '', message: 'Props validation returned an unsupported result.' }],
       },
     }
   }
@@ -272,10 +301,10 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   }
 
   function resetCurrentProps(): void {
-    currentProps.value = cloneProps(selectedVariant.value?.props)
-    propsJsonText.value = formatPropsJson(currentProps.value)
+    const nextProps = cloneProps(selectedVariant.value?.props)
+    propsJsonText.value = formatPropsJson(nextProps)
     propsJsonParseError.value = null
-    const validation = validateProps(currentProps.value, selectedCase.value?.propsSchema)
+    const validation = validateProps(nextProps, selectedCase.value?.propsSchema)
     propsValidationResult.value = validation.result
     if (validation.ok) {
       currentProps.value = cloneProps(validation.props)
