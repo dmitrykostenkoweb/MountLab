@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, ref, shallowRef } from 'vue'
+import { computed, inject, ref } from 'vue'
 import type { Component } from 'vue'
 import type { ComponentCase, ComponentVariant, MountLabConfig } from '../core/types.js'
 import Sidebar from './components/Sidebar.vue'

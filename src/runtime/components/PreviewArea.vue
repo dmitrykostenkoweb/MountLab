@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineComponent, h, onErrorCaptured, ref, shallowRef, watch } from 'vue'
+import { onErrorCaptured, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import type { ComponentCase, ComponentVariant } from '../../core/types.js'
 
