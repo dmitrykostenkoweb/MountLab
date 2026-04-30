@@ -8,6 +8,8 @@ interface UrlSelection {
   wrapperKey: string | null
 }
 
+type WrapperFallbackReason = 'missing-explicit' | 'missing-case' | 'missing-default' | null
+
 type PropsRecord = Record<string, unknown>
 
 export interface ValidationIssue {
@@ -27,6 +29,13 @@ export interface EventLogEntry {
   name: string
   timestamp: string
   payload: unknown
+}
+
+export interface WrapperResolution {
+  requestedKey: string | null
+  resolvedKey: string | null
+  missingKeys: string[]
+  fallbackReason: WrapperFallbackReason
 }
 
 interface SafeParseSchema {
@@ -231,6 +240,77 @@ function hasWrapper(config: MountLabConfig, key: string | null | undefined): key
   return typeof key === 'string' && !!config.wrappers?.[key]
 }
 
+export function resolveWrapperSelection(
+  config: MountLabConfig,
+  componentCase: ComponentCase | null,
+  explicitKey: string | null,
+): WrapperResolution {
+  if (hasWrapper(config, explicitKey)) {
+    return {
+      requestedKey: explicitKey,
+      resolvedKey: explicitKey,
+      missingKeys: [],
+      fallbackReason: null,
+    }
+  }
+
+  const missingKeys: string[] = []
+  let fallbackReason: WrapperFallbackReason = null
+
+  if (explicitKey) {
+    missingKeys.push(explicitKey)
+    fallbackReason = 'missing-explicit'
+  } else if (componentCase?.wrapper && !hasWrapper(config, componentCase.wrapper)) {
+    missingKeys.push(componentCase.wrapper)
+    fallbackReason = 'missing-case'
+  }
+
+  const caseWrapper = componentCase?.wrapper
+  if (hasWrapper(config, caseWrapper)) {
+    return {
+      requestedKey: explicitKey ?? caseWrapper ?? null,
+      resolvedKey: caseWrapper,
+      missingKeys,
+      fallbackReason,
+    }
+  }
+
+  if (hasWrapper(config, config.defaultWrapper)) {
+    return {
+      requestedKey: explicitKey ?? componentCase?.wrapper ?? config.defaultWrapper ?? null,
+      resolvedKey: config.defaultWrapper,
+      missingKeys,
+      fallbackReason,
+    }
+  }
+
+  if (config.defaultWrapper && !hasWrapper(config, config.defaultWrapper)) {
+    missingKeys.push(config.defaultWrapper)
+    fallbackReason ??= 'missing-default'
+  }
+
+  return {
+    requestedKey: explicitKey ?? componentCase?.wrapper ?? config.defaultWrapper ?? null,
+    resolvedKey: null,
+    missingKeys,
+    fallbackReason,
+  }
+}
+
+function formatWrapperWarning(resolution: WrapperResolution): string | null {
+  if (resolution.missingKeys.length === 0) return null
+
+  const missing = resolution.missingKeys
+    .map(key => `"${key}"`)
+    .join(', ')
+
+  if (resolution.resolvedKey) {
+    return `Wrapper ${missing} is not configured. Using "${resolution.resolvedKey}" instead.`
+  }
+
+  return `Wrapper ${missing} is not configured. Using the built-in empty wrapper.`
+}
+
 function writeUrlSelection(selection: UrlSelection): void {
   if (!canUseBrowserUrl() || typeof window.history?.replaceState !== 'function') {
     return
@@ -256,11 +336,18 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   const selectedCaseId = ref<string | null>(urlSelection.caseId)
   const selectedVariantId = ref<string | null>(urlSelection.variantId)
   const selectedWrapperKey = ref<string | null>(urlSelection.wrapperKey)
+  const explicitWrapperKey = ref<string | null>(urlSelection.wrapperKey)
   const currentProps = ref<PropsRecord>({})
   const propsJsonText = ref('{}')
   const propsJsonParseError = ref<string | null>(null)
   const propsValidationResult = ref<PropsValidationResult>(unavailableValidation())
   const eventLog = ref<EventLogEntry[]>([])
+  const wrapperResolution = ref<WrapperResolution>({
+    requestedKey: null,
+    resolvedKey: null,
+    missingKeys: [],
+    fallbackReason: null,
+  })
   let nextEventId = 1
 
   const selectedCase = computed<ComponentCase | null>(() =>
@@ -276,6 +363,10 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     return config.wrappers[selectedWrapperKey.value] ?? null
   })
 
+  const wrapperWarning = computed<string | null>(() =>
+    formatWrapperWarning(wrapperResolution.value),
+  )
+
   function resolveCaseId(candidate: string | null): string | null {
     if (candidate && cases.some(c => c.id === candidate)) return candidate
     return cases[0]?.id ?? null
@@ -288,16 +379,6 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     if (!componentCase) return null
     if (candidate && componentCase.variants.some(v => v.id === candidate)) return candidate
     return componentCase.variants[0]?.id ?? null
-  }
-
-  function resolveWrapperKey(
-    componentCase: ComponentCase | null,
-    candidate: string | null,
-  ): string | null {
-    if (hasWrapper(config, candidate)) return candidate
-    if (hasWrapper(config, componentCase?.wrapper)) return componentCase.wrapper
-    if (hasWrapper(config, config.defaultWrapper)) return config.defaultWrapper
-    return null
   }
 
   function resetCurrentProps(): void {
@@ -380,11 +461,13 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     const caseId = resolveCaseId(selectedCaseId.value)
     const componentCase = cases.find(c => c.id === caseId) ?? null
     const variantId = resolveVariantId(componentCase, selectedVariantId.value)
-    const wrapperKey = resolveWrapperKey(componentCase, selectedWrapperKey.value)
+    const resolution = resolveWrapperSelection(config, componentCase, explicitWrapperKey.value)
+    const wrapperKey = resolution.resolvedKey
 
     selectedCaseId.value = caseId
     selectedVariantId.value = variantId
     selectedWrapperKey.value = wrapperKey
+    wrapperResolution.value = resolution
 
     if (options.resetProps) {
       resetCurrentProps()
@@ -397,7 +480,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   function selectCase(caseId: string): void {
     selectedCaseId.value = caseId
     selectedVariantId.value = null
-    selectedWrapperKey.value = null
+    explicitWrapperKey.value = null
     normalizeSelection({ resetProps: true })
   }
 
@@ -407,7 +490,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   }
 
   function selectWrapper(wrapperKey: string): void {
-    selectedWrapperKey.value = wrapperKey
+    explicitWrapperKey.value = wrapperKey
     normalizeSelection({ resetProps: false })
   }
 
@@ -429,6 +512,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     selectedCase,
     selectedVariant,
     wrapperComponent,
+    wrapperWarning,
     currentProps,
     propsJsonText,
     propsJsonParseError,

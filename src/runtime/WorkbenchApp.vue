@@ -26,6 +26,7 @@ const workbenchState = useWorkbenchState(cases, config)
         :selected-case="workbenchState.selectedCase.value"
         :selected-variant-id="workbenchState.selectedVariantId.value"
         :selected-wrapper="workbenchState.selectedWrapperKey.value"
+        :wrapper-warning="workbenchState.wrapperWarning.value"
         :config="config"
         @update:selected-variant-id="workbenchState.selectVariant"
         @update:selected-wrapper="workbenchState.selectWrapper"

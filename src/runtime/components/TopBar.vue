@@ -5,6 +5,7 @@ const props = defineProps<{
   selectedCase: ComponentCase | null
   selectedVariantId: string | null
   selectedWrapper: string | null
+  wrapperWarning: string | null
   config: MountLabConfig
 }>()
 
@@ -51,6 +52,14 @@ const emit = defineEmits<{
         </select>
       </label>
     </div>
+
+    <div
+      v-if="wrapperWarning"
+      class="ml-topbar__warning"
+      role="status"
+    >
+      {{ wrapperWarning }}
+    </div>
   </header>
 </template>
 
@@ -79,6 +88,19 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.ml-topbar__warning {
+  max-width: min(520px, 40vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #fbbf24;
+  background: #2d220b;
+  border: 1px solid #70540f;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
 }
 
 .ml-topbar__label {
