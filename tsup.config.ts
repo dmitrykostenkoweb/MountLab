@@ -21,6 +21,9 @@ export default defineConfig([
     format: ['esm'],
     dts: true,
     splitting: false,
+    // esbuild and vite must not be bundled — they use CJS dynamic require
+    // internally and break when inlined into an ESM bundle.
+    external: ['esbuild', 'vite'],
     banner: {
       js: '#!/usr/bin/env node',
     },
