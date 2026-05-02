@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onErrorCaptured, ref, watch } from 'vue'
 import type { Component } from 'vue'
-import type { ComponentCase, ComponentVariant } from '../../core/types.js'
+import type { ComponentCase, ComponentVariant, Viewport } from '../../core/types.js'
 
 const props = defineProps<{
   selectedCase: ComponentCase | null
@@ -9,6 +9,7 @@ const props = defineProps<{
   wrapperComponent: Component | null
   currentProps: Record<string, unknown>
   eventNames: string[]
+  viewport: Viewport | null
 }>()
 
 const emit = defineEmits<{
@@ -35,6 +36,17 @@ const eventListeners = computed<Record<string, (...args: unknown[]) => void>>(()
   return listeners
 })
 
+const viewportStyle = computed<Record<string, string>>(() => {
+  if (!props.viewport) return {}
+
+  return {
+    width: `${props.viewport.width}px`,
+    height: `${props.viewport.height}px`,
+    minWidth: `${props.viewport.width}px`,
+    minHeight: `${props.viewport.height}px`,
+  }
+})
+
 onErrorCaptured((err) => {
   renderError.value = err instanceof Error ? err.message : String(err)
   return false
@@ -58,13 +70,15 @@ watch(
     </div>
 
     <template v-else>
-      <component :is="wrapperComponent ?? 'div'" class="ml-preview__wrapper">
-        <component
-          :is="selectedCase.component"
-          v-bind="currentProps"
-          v-on="eventListeners"
-        />
-      </component>
+      <div class="ml-preview__surface" :style="viewportStyle">
+        <component :is="wrapperComponent ?? 'div'" class="ml-preview__wrapper">
+          <component
+            :is="selectedCase.component"
+            v-bind="currentProps"
+            v-on="eventListeners"
+          />
+        </component>
+      </div>
     </template>
   </div>
 </template>
@@ -75,6 +89,7 @@ watch(
   overflow: auto;
   background: #f8fafc;
   min-height: 0;
+  padding: 0;
 }
 
 .ml-preview__empty {
@@ -107,6 +122,12 @@ watch(
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.ml-preview__surface {
+  min-width: 100%;
+  min-height: 100%;
+  background: #f8fafc;
 }
 
 .ml-preview__wrapper {

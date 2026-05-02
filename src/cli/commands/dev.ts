@@ -1,9 +1,14 @@
 import path from 'node:path'
 import fs from 'node:fs'
+import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import { createServer, mergeConfig, loadConfigFromFile } from 'vite'
 import { mountlab } from '../../plugin/index.js'
 import type { MountLabConfig } from '../../core/types.js'
+
+export interface DevOptions {
+  open: boolean
+}
 
 /**
  * Bundles mountlab.config.ts with esbuild, stubbing .vue imports as empty
@@ -58,7 +63,32 @@ async function loadMountLabConfig(cwd: string): Promise<MountLabConfig> {
   }
 }
 
-export async function runDev(): Promise<void> {
+export function openUrl(url: string): void {
+  const command = process.platform === 'darwin'
+    ? 'open'
+    : process.platform === 'win32'
+      ? 'cmd'
+      : 'xdg-open'
+  const args = process.platform === 'win32'
+    ? ['/c', 'start', '', url]
+    : [url]
+
+  try {
+    const child = spawn(command, args, {
+      detached: true,
+      stdio: 'ignore',
+    })
+    child.on('error', (err) => {
+      console.warn(`[MountLab] Could not open browser automatically: ${err.message}`)
+    })
+    child.unref()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    console.warn(`[MountLab] Could not open browser automatically: ${message}`)
+  }
+}
+
+export async function runDev(options: DevOptions = { open: false }): Promise<void> {
   const cwd = process.cwd()
 
   const mountLabConfig = await loadMountLabConfig(cwd)
@@ -96,6 +126,10 @@ export async function runDev(): Promise<void> {
 
   await server.listen()
   server.printUrls()
+  const localUrl = server.resolvedUrls?.local[0] ?? `http://localhost:${port}/`
+  if (options.open) {
+    openUrl(localUrl)
+  }
   console.log()
   console.log('[MountLab] Workbench ready. Press Ctrl+C to stop.')
 }

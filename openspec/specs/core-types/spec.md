@@ -2,9 +2,7 @@
 
 ## Purpose
 TypeScript interface definitions for all core MountLab domain objects: configuration, component cases, variants, and viewports. These types are the shared contract between the CLI, Vite plugin, and runtime UI.
-
 ## Requirements
-
 ### Requirement: MountLabConfig interface
 The package SHALL export a `MountLabConfig` interface describing the full configuration object accepted by `defineMountLabConfig`.
 
@@ -95,5 +93,24 @@ The package SHALL export a `Viewport` interface for named viewport presets.
 ---
 
 ### Requirement: All types are re-exported from package root
+The package root SHALL re-export all public MountLab core types needed by user-authored config and case files.
+
+#### Scenario: Root type exports are available
 - **WHEN** a user imports from `@mountlab/vue`
 - **THEN** `MountLabConfig`, `ComponentCase`, `ComponentVariant`, and `Viewport` SHALL be available as named type exports
+
+### Requirement: Viewport config semantics
+The `MountLabConfig.viewports` field SHALL define named runtime viewport presets where each key maps to fixed dimensions or to `null` for unconstrained auto preview mode.
+
+#### Scenario: Fixed viewport preset
+- **WHEN** `viewports` contains `{ mobile: { width: 390, height: 844 } }`
+- **THEN** the runtime SHALL treat `mobile` as a selectable fixed-size viewport preset
+
+#### Scenario: Null viewport preset
+- **WHEN** `viewports` contains `{ auto: null }`
+- **THEN** the runtime SHALL treat `auto` as a selectable unconstrained preview preset
+
+#### Scenario: Viewports remain optional
+- **WHEN** `viewports` is omitted from `MountLabConfig`
+- **THEN** TypeScript SHALL still accept the config
+- **AND** runtime behavior SHALL provide a built-in unconstrained preview mode

@@ -2,7 +2,6 @@
 
 ## Purpose
 Runtime workbench state management for selected cases, variants, wrappers, current props, and shareable URL query synchronization.
-
 ## Requirements
 ### Requirement: Runtime state model
 The runtime workbench SHALL maintain a single authoritative state model for selected case ID, selected variant ID, selected wrapper key, and current props.
@@ -115,3 +114,39 @@ The runtime workbench SHALL keep URL query params synchronized with the active c
 #### Scenario: URL sync avoids browser history noise
 - **WHEN** runtime selection changes
 - **THEN** the runtime SHALL update the current URL without adding a new browser history entry for each selection change
+
+### Requirement: URL viewport state
+The runtime workbench SHALL restore and synchronize the selected viewport using a `viewport` URL query parameter when viewport presets are available.
+
+#### Scenario: Valid viewport URL param is restored
+- **WHEN** the runtime starts with a `viewport` URL param that matches a configured viewport key
+- **THEN** the state model SHALL select that viewport
+
+#### Scenario: Invalid viewport URL param falls back
+- **WHEN** the runtime starts with a `viewport` URL param that does not match a configured or built-in viewport key
+- **THEN** the state model SHALL select a valid fallback viewport
+- **AND** it SHALL not expose the invalid viewport key as the active viewport
+
+#### Scenario: Selecting a viewport updates URL
+- **WHEN** the user selects a different viewport
+- **THEN** the URL query param `viewport` SHALL reflect the active viewport key
+
+#### Scenario: Viewport URL sync preserves unrelated params
+- **WHEN** viewport selection changes while the current URL contains unrelated query params
+- **THEN** the unrelated query params SHALL remain in the URL
+
+### Requirement: Current preview URL can be copied
+The runtime workbench SHALL provide an action that copies the current normalized preview URL to the clipboard without changing runtime selection state.
+
+#### Scenario: Copy current URL writes to clipboard
+- **WHEN** the user invokes the copy current URL action
+- **THEN** the runtime SHALL request writing the current normalized workbench URL to the clipboard
+
+#### Scenario: Copy current URL preserves state
+- **WHEN** the user invokes the copy current URL action
+- **THEN** the selected case, variant, wrapper, viewport, current props, and event log SHALL remain unchanged
+
+#### Scenario: Clipboard unavailable
+- **WHEN** clipboard writing is unavailable or fails
+- **THEN** the workbench SHALL remain usable
+- **AND** the failure SHALL NOT crash preview rendering

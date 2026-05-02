@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Component } from 'vue'
 import type { ComponentCase, MountLabConfig } from '../../core/types.js'
 import { resolveWrapperSelection, useWorkbenchState } from './useWorkbenchState.js'
@@ -14,12 +14,43 @@ function componentCase(wrapper?: string): ComponentCase {
   }
 }
 
+function propsCase(schema?: unknown): ComponentCase {
+  return {
+    id: 'form',
+    component: ComponentStub,
+    propsSchema: schema,
+    variants: [{ id: 'default', props: { label: 'Save' } }],
+    events: ['submit'],
+  }
+}
+
 function config(
   wrappers: MountLabConfig['wrappers'],
   defaultWrapper?: string,
+  viewports?: MountLabConfig['viewports'],
 ): MountLabConfig {
-  return { wrappers, defaultWrapper }
+  return { wrappers, defaultWrapper, viewports }
 }
+
+function stubBrowserUrl(href: string) {
+  const location = new URL(href)
+  const history = {
+    state: null,
+    replaceState: vi.fn((_state: unknown, _unused: string, url: URL) => {
+      const next = new URL(String(url))
+      location.href = next.href
+      location.search = next.search
+    }),
+  }
+
+  vi.stubGlobal('window', { location, history })
+
+  return { location, history }
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+})
 
 describe('resolveWrapperSelection', () => {
   it('uses the case wrapper without warning when it exists', () => {
@@ -105,5 +136,154 @@ describe('resolveWrapperSelection', () => {
     expect(state.wrapperWarning.value).toContain('"missing-case-wrapper"')
     expect(state.wrapperWarning.value).toContain('"missing-default-wrapper"')
     expect(state.wrapperWarning.value).toContain('built-in empty wrapper')
+  })
+
+  it('restores and synchronizes viewport URL state', () => {
+    const { location, history } = stubBrowserUrl('http://localhost:4300/?keep=1&viewport=mobile')
+    const state = useWorkbenchState(
+      [componentCase()],
+      config({}, undefined, {
+        mobile: { width: 390, height: 844 },
+        desktop: { width: 1280, height: 800 },
+      }),
+    )
+
+    expect(state.selectedViewportKey.value).toBe('mobile')
+    expect(state.selectedViewport.value).toEqual({ width: 390, height: 844 })
+
+    state.selectViewport('desktop')
+
+    expect(location.search).toContain('keep=1')
+    expect(location.search).toContain('viewport=desktop')
+    expect(history.replaceState).toHaveBeenCalled()
+  })
+
+  it('falls back from invalid viewport URL params to auto mode', () => {
+    stubBrowserUrl('http://localhost:4300/?viewport=missing')
+    const state = useWorkbenchState(
+      [componentCase()],
+      config({}, undefined, {
+        mobile: { width: 390, height: 844 },
+      }),
+    )
+
+    expect(state.selectedViewportKey.value).toBe('auto')
+    expect(state.selectedViewport.value).toBeNull()
+  })
+
+  it('copies the current normalized URL without changing selection state', async () => {
+    const { location } = stubBrowserUrl('http://localhost:4300/?case=button&variant=default')
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    const state = useWorkbenchState(
+      [componentCase()],
+      config({ default: ComponentStub }, 'default'),
+    )
+
+    await state.copyCurrentUrl()
+
+    expect(writeText).toHaveBeenCalledWith(location.href)
+    expect(state.selectedCaseId.value).toBe('button')
+    expect(state.selectedVariantId.value).toBe('default')
+    expect(state.selectedWrapperKey.value).toBe('default')
+  })
+
+  it('keeps the workbench usable when clipboard copying fails', async () => {
+    stubBrowserUrl('http://localhost:4300/')
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'))
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+
+    const state = useWorkbenchState([componentCase()], config({}, undefined))
+
+    await expect(state.copyCurrentUrl()).resolves.toBeUndefined()
+    expect(state.selectedCaseId.value).toBe('button')
+  })
+
+  it('keeps last valid props for invalid JSON edits', () => {
+    const state = useWorkbenchState([propsCase()], config({}, undefined))
+
+    state.updatePropsJsonText('{')
+
+    expect(state.currentProps.value).toEqual({ label: 'Save' })
+    expect(state.propsJsonParseError.value).toContain('Expected')
+    expect(state.propsValidationResult.value.status).toBe('invalid')
+  })
+
+  it('validates props through safeParse schemas', () => {
+    const schema = {
+      safeParse(value: unknown) {
+        if (['Save', 'OK'].includes(String((value as { label?: unknown }).label))) {
+          return { success: true, data: value }
+        }
+
+        return {
+          success: false,
+          error: {
+            issues: [{
+              path: ['label'],
+              message: 'Expected OK',
+              expected: 'OK',
+              received: 'other',
+            }],
+          },
+        }
+      },
+    }
+    const state = useWorkbenchState([propsCase(schema)], config({}, undefined))
+
+    state.updatePropsJsonText(JSON.stringify({ label: 'Bad' }))
+
+    expect(state.currentProps.value).toEqual({ label: 'Save' })
+    expect(state.propsValidationResult.value.status).toBe('invalid')
+    expect(state.propsValidationResult.value.issues[0]).toMatchObject({
+      path: 'label',
+      expected: 'OK',
+      received: 'other',
+    })
+
+    state.updatePropsJsonText(JSON.stringify({ label: 'OK' }))
+
+    expect(state.currentProps.value).toEqual({ label: 'OK' })
+    expect(state.propsValidationResult.value.status).toBe('valid')
+  })
+
+  it('records, clears, and resets event log on case changes', () => {
+    const state = useWorkbenchState(
+      [
+        propsCase(),
+        {
+          id: 'other',
+          component: ComponentStub,
+          variants: [{ id: 'default', props: {} }],
+        },
+      ],
+      config({}, undefined),
+    )
+
+    state.recordEvent('submit', { id: 1 })
+
+    expect(state.eventLog.value).toHaveLength(1)
+    expect(state.eventLog.value[0].name).toBe('submit')
+
+    state.clearEventLog()
+
+    expect(state.eventLog.value).toHaveLength(0)
+
+    state.recordEvent('submit', { id: 2 })
+    state.selectCase('other')
+
+    expect(state.eventLog.value).toHaveLength(0)
+  })
+
+  it('copies props JSON without changing state', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const state = useWorkbenchState([propsCase()], config({}, undefined))
+
+    await state.copyPropsJson()
+
+    expect(writeText).toHaveBeenCalledWith(state.propsJsonText.value)
+    expect(state.currentProps.value).toEqual({ label: 'Save' })
   })
 })

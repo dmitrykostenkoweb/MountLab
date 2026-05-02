@@ -37,6 +37,8 @@ Running `mountlab init` SHALL create two files in the project root:
 ---
 
 ### Requirement: Guard against overwriting existing files
+The `mountlab init` command SHALL protect existing generated files from accidental overwrite unless `--force` is provided.
+
 #### Scenario: Existing file without --force
 - **WHEN** `mountlab.config.ts` already exists and `mountlab init` is run without `--force`
 - **THEN** the command SHALL exit with a non-zero code and print which files already exist
@@ -53,6 +55,8 @@ Running `mountlab init` SHALL create two files in the project root:
 ---
 
 ### Requirement: --dry-run mode
+The `mountlab init` command SHALL support a dry-run mode that reports intended file operations without writing files.
+
 #### Scenario: Dry run produces no file changes
 - **WHEN** `mountlab init --dry-run` is run
 - **THEN** no files SHALL be written or created
@@ -68,6 +72,8 @@ Running `mountlab init` SHALL create two files in the project root:
 ---
 
 ### Requirement: Success message
+The `mountlab init` command SHALL print a completion message that guides the developer to the next step after successful initialization.
+
 #### Scenario: Completion hint
 - **WHEN** `mountlab init` completes successfully (not dry-run)
 - **THEN** the output SHALL include a message guiding the user to the next step (e.g. "Edit mountlab.config.ts, then run `mountlab dev`")

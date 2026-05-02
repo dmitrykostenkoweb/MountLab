@@ -1,9 +1,7 @@
 ## Purpose
 
 Repository-level verification commands used during MountLab development.
-
 ## Requirements
-
 ### Requirement: Repository type-check command succeeds
 The repository SHALL provide a working type-check command that validates the current TypeScript source tree without emitting files.
 
@@ -36,3 +34,47 @@ The stabilization SHALL NOT change user-facing CLI commands, core helper APIs, p
 - **THEN** no CLI command contract SHALL change
 - **AND** no package export contract SHALL change
 - **AND** no new runtime user workflow SHALL be introduced
+
+### Requirement: CLI behavior is covered by tests
+The repository SHALL include focused verification for CLI command registration and option wiring that are part of the MountLab developer workflow.
+
+#### Scenario: dev open option is verified
+- **WHEN** the CLI verification suite runs
+- **THEN** it SHALL verify that `mountlab dev --open` is accepted and forwarded to the dev command handler
+
+#### Scenario: existing CLI options remain verified
+- **WHEN** the CLI verification suite runs
+- **THEN** it SHALL verify existing `init` and `add` option wiring for dry-run, force, group, and wrapper behavior
+
+### Requirement: Runtime PRD workflows are covered by tests
+The repository SHALL include runtime verification for state and UI behavior that supports PRD-critical workbench workflows.
+
+#### Scenario: URL and viewport state are verified
+- **WHEN** runtime state tests run
+- **THEN** they SHALL cover case, variant, wrapper, and viewport URL restoration and synchronization
+
+#### Scenario: Sidebar behavior is verified
+- **WHEN** runtime sidebar tests run
+- **THEN** they SHALL cover explicit grouping, path fallback grouping, and search filtering
+
+#### Scenario: Right panel behavior remains verified
+- **WHEN** runtime right-panel tests run
+- **THEN** they SHALL cover props JSON editing, invalid JSON handling, schema validation, event logging, and copy actions
+
+### Requirement: Case discovery behavior is covered by tests
+The repository SHALL include verification for virtual case discovery behavior used by the runtime.
+
+#### Scenario: Case metadata is verified
+- **WHEN** plugin discovery tests run
+- **THEN** they SHALL verify that discovered case registry output includes source path metadata for runtime use
+
+#### Scenario: Discovery diagnostics remain verified
+- **WHEN** plugin discovery tests run
+- **THEN** they SHALL verify invalid case diagnostics and duplicate case ID diagnostics
+
+### Requirement: Real workflow smoke path is documented or automated
+The repository SHALL provide a lightweight smoke path for validating `init`, `add`, and `dev` against a minimal Vue/Vite project.
+
+#### Scenario: Smoke path exists
+- **WHEN** a maintainer needs to validate the full MountLab workflow
+- **THEN** the repository SHALL provide either an automated smoke test or documented smoke fixture steps for `mountlab init`, `mountlab add`, and `mountlab dev`

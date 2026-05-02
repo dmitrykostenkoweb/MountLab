@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { inject } from 'vue'
 import type { ComponentCase, MountLabConfig } from '../core/types.js'
+import type { RuntimeCaseEntry } from './caseMetadata.js'
 import Sidebar from './components/Sidebar.vue'
 import TopBar from './components/TopBar.vue'
 import PreviewArea from './components/PreviewArea.vue'
@@ -8,6 +9,7 @@ import RightPanel from './components/RightPanel.vue'
 import { useWorkbenchState } from './composables/useWorkbenchState.js'
 
 const cases = inject<ComponentCase[]>('mountlab:cases', [])
+const caseEntries = inject<RuntimeCaseEntry[]>('mountlab:caseEntries', [])
 const config = inject<MountLabConfig>('mountlab:config', {})
 
 const workbenchState = useWorkbenchState(cases, config)
@@ -17,6 +19,7 @@ const workbenchState = useWorkbenchState(cases, config)
   <div class="ml-workbench">
     <Sidebar
       :cases="cases"
+      :case-entries="caseEntries"
       :selected-id="workbenchState.selectedCaseId.value"
       @select="workbenchState.selectCase"
     />
@@ -26,10 +29,14 @@ const workbenchState = useWorkbenchState(cases, config)
         :selected-case="workbenchState.selectedCase.value"
         :selected-variant-id="workbenchState.selectedVariantId.value"
         :selected-wrapper="workbenchState.selectedWrapperKey.value"
+        :selected-viewport-key="workbenchState.selectedViewportKey.value"
         :wrapper-warning="workbenchState.wrapperWarning.value"
         :config="config"
+        :viewport-options="workbenchState.viewportOptions.value"
         @update:selected-variant-id="workbenchState.selectVariant"
         @update:selected-wrapper="workbenchState.selectWrapper"
+        @update:selected-viewport="workbenchState.selectViewport"
+        @copy-url="workbenchState.copyCurrentUrl"
       />
 
       <PreviewArea
@@ -38,6 +45,7 @@ const workbenchState = useWorkbenchState(cases, config)
         :wrapper-component="workbenchState.wrapperComponent.value"
         :current-props="workbenchState.currentProps.value"
         :event-names="workbenchState.selectedCase.value?.events ?? []"
+        :viewport="workbenchState.selectedViewport.value"
         @event-captured="workbenchState.recordEvent"
       />
     </div>

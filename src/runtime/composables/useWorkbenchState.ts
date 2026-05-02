@@ -1,11 +1,12 @@
 import { computed, ref, watch } from 'vue'
 import type { Component } from 'vue'
-import type { ComponentCase, ComponentVariant, MountLabConfig } from '../../core/types.js'
+import type { ComponentCase, ComponentVariant, MountLabConfig, Viewport } from '../../core/types.js'
 
 interface UrlSelection {
   caseId: string | null
   variantId: string | null
   wrapperKey: string | null
+  viewportKey: string | null
 }
 
 type WrapperFallbackReason = 'missing-explicit' | 'missing-case' | 'missing-default' | null
@@ -38,6 +39,12 @@ export interface WrapperResolution {
   fallbackReason: WrapperFallbackReason
 }
 
+export interface ViewportOption {
+  key: string
+  title: string
+  viewport: Viewport | null
+}
+
 interface SafeParseSchema {
   safeParse: (value: unknown) => unknown
 }
@@ -48,7 +55,7 @@ function canUseBrowserUrl(): boolean {
 
 function readUrlSelection(): UrlSelection {
   if (!canUseBrowserUrl()) {
-    return { caseId: null, variantId: null, wrapperKey: null }
+    return { caseId: null, variantId: null, wrapperKey: null, viewportKey: null }
   }
 
   const params = new URLSearchParams(window.location.search)
@@ -57,6 +64,7 @@ function readUrlSelection(): UrlSelection {
     caseId: params.get('case'),
     variantId: params.get('variant'),
     wrapperKey: params.get('wrapper'),
+    viewportKey: params.get('viewport'),
   }
 }
 
@@ -327,7 +335,35 @@ function writeUrlSelection(selection: UrlSelection): void {
   if (selection.wrapperKey) url.searchParams.set('wrapper', selection.wrapperKey)
   else url.searchParams.delete('wrapper')
 
+  if (selection.viewportKey) url.searchParams.set('viewport', selection.viewportKey)
+  else url.searchParams.delete('viewport')
+
   window.history.replaceState(window.history.state, '', url)
+}
+
+function formatViewportTitle(key: string): string {
+  return key
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || key
+}
+
+function getViewportOptions(config: MountLabConfig): ViewportOption[] {
+  const configured = Object.entries(config.viewports ?? {}).map(([key, viewport]) => ({
+    key,
+    title: formatViewportTitle(key),
+    viewport,
+  }))
+
+  if (configured.some(option => option.viewport === null)) {
+    return configured
+  }
+
+  return [
+    { key: 'auto', title: 'Auto', viewport: null },
+    ...configured,
+  ]
 }
 
 export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig) {
@@ -337,6 +373,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   const selectedVariantId = ref<string | null>(urlSelection.variantId)
   const selectedWrapperKey = ref<string | null>(urlSelection.wrapperKey)
   const explicitWrapperKey = ref<string | null>(urlSelection.wrapperKey)
+  const selectedViewportKey = ref<string | null>(urlSelection.viewportKey)
   const currentProps = ref<PropsRecord>({})
   const propsJsonText = ref('{}')
   const propsJsonParseError = ref<string | null>(null)
@@ -367,6 +404,12 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     formatWrapperWarning(wrapperResolution.value),
   )
 
+  const viewportOptions = computed<ViewportOption[]>(() => getViewportOptions(config))
+
+  const selectedViewport = computed<Viewport | null>(() =>
+    viewportOptions.value.find(option => option.key === selectedViewportKey.value)?.viewport ?? null,
+  )
+
   function resolveCaseId(candidate: string | null): string | null {
     if (candidate && cases.some(c => c.id === candidate)) return candidate
     return cases[0]?.id ?? null
@@ -379,6 +422,18 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     if (!componentCase) return null
     if (candidate && componentCase.variants.some(v => v.id === candidate)) return candidate
     return componentCase.variants[0]?.id ?? null
+  }
+
+  function resolveViewportKey(candidate: string | null): string | null {
+    const options = viewportOptions.value
+    if (candidate && options.some(option => option.key === candidate)) return candidate
+
+    return (
+      options.find(option => option.key === 'auto')?.key
+      ?? options.find(option => option.key === 'default')?.key
+      ?? options[0]?.key
+      ?? null
+    )
   }
 
   function resetCurrentProps(): void {
@@ -445,6 +500,22 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     await navigator.clipboard.writeText(propsJsonText.value)
   }
 
+  async function copyCurrentUrl(): Promise<void> {
+    if (
+      !canUseBrowserUrl()
+      || typeof navigator === 'undefined'
+      || typeof navigator.clipboard?.writeText !== 'function'
+    ) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(window.location.href)
+    } catch {
+      // Copying is a convenience action; failure must not disrupt the workbench.
+    }
+  }
+
   function recordEvent(name: string, payload: unknown): void {
     eventLog.value = [
       {
@@ -463,10 +534,12 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     const variantId = resolveVariantId(componentCase, selectedVariantId.value)
     const resolution = resolveWrapperSelection(config, componentCase, explicitWrapperKey.value)
     const wrapperKey = resolution.resolvedKey
+    const viewportKey = resolveViewportKey(selectedViewportKey.value)
 
     selectedCaseId.value = caseId
     selectedVariantId.value = variantId
     selectedWrapperKey.value = wrapperKey
+    selectedViewportKey.value = viewportKey
     wrapperResolution.value = resolution
 
     if (options.resetProps) {
@@ -474,7 +547,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
       clearEventLog()
     }
 
-    writeUrlSelection({ caseId, variantId, wrapperKey })
+    writeUrlSelection({ caseId, variantId, wrapperKey, viewportKey })
   }
 
   function selectCase(caseId: string): void {
@@ -494,6 +567,11 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     normalizeSelection({ resetProps: false })
   }
 
+  function selectViewport(viewportKey: string): void {
+    selectedViewportKey.value = viewportKey
+    normalizeSelection({ resetProps: false })
+  }
+
   normalizeSelection({ resetProps: true })
 
   watch(
@@ -501,6 +579,9 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
       cases.map(c => `${c.id}:${c.variants.map(v => v.id).join(',')}`).join('|'),
       Object.keys(config.wrappers ?? {}).join('|'),
       config.defaultWrapper ?? '',
+      Object.entries(config.viewports ?? {})
+        .map(([key, viewport]) => `${key}:${viewport?.width ?? 'auto'}x${viewport?.height ?? 'auto'}`)
+        .join('|'),
     ],
     () => normalizeSelection({ resetProps: true }),
   )
@@ -509,10 +590,13 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     selectedCaseId,
     selectedVariantId,
     selectedWrapperKey,
+    selectedViewportKey,
     selectedCase,
     selectedVariant,
     wrapperComponent,
     wrapperWarning,
+    viewportOptions,
+    selectedViewport,
     currentProps,
     propsJsonText,
     propsJsonParseError,
@@ -521,9 +605,11 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     selectCase,
     selectVariant,
     selectWrapper,
+    selectViewport,
     updatePropsJsonText,
     resetCurrentProps,
     copyPropsJson,
+    copyCurrentUrl,
     recordEvent,
     clearEventLog,
   }

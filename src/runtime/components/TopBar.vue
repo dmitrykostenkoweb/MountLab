@@ -1,17 +1,22 @@
 <script setup lang="ts">
 import type { ComponentCase, MountLabConfig } from '../../core/types.js'
+import type { ViewportOption } from '../composables/useWorkbenchState.js'
 
 const props = defineProps<{
   selectedCase: ComponentCase | null
   selectedVariantId: string | null
   selectedWrapper: string | null
+  selectedViewportKey: string | null
   wrapperWarning: string | null
   config: MountLabConfig
+  viewportOptions: ViewportOption[]
 }>()
 
 const emit = defineEmits<{
   'update:selectedVariantId': [id: string]
   'update:selectedWrapper': [key: string]
+  'update:selectedViewport': [key: string]
+  copyUrl: []
 }>()
 </script>
 
@@ -51,6 +56,34 @@ const emit = defineEmits<{
           >{{ key }}</option>
         </select>
       </label>
+
+      <label class="ml-topbar__label" v-if="viewportOptions.length > 0">
+        Viewport
+        <select
+          class="ml-topbar__select"
+          :value="selectedViewportKey ?? ''"
+          @change="emit('update:selectedViewport', ($event.target as HTMLSelectElement).value)"
+        >
+          <option
+            v-for="option in viewportOptions"
+            :key="option.key"
+            :value="option.key"
+          >
+            {{ option.title }}
+            <template v-if="option.viewport">
+              ({{ option.viewport.width }}x{{ option.viewport.height }})
+            </template>
+          </option>
+        </select>
+      </label>
+
+      <button
+        class="ml-topbar__button"
+        type="button"
+        @click="emit('copyUrl')"
+      >
+        Copy URL
+      </button>
     </div>
 
     <div
@@ -119,5 +152,20 @@ const emit = defineEmits<{
   padding: 3px 8px;
   font-size: 12px;
   cursor: pointer;
+}
+
+.ml-topbar__button {
+  border: 1px solid #2d2d4e;
+  border-radius: 4px;
+  padding: 4px 8px;
+  background: #1a1a2e;
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ml-topbar__button:hover {
+  background: #2d2d4e;
+  color: #f8fafc;
 }
 </style>

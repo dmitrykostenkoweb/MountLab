@@ -2,9 +2,7 @@
 
 ## Purpose
 The npm package shape for `@mountlab/vue`: binary entrypoint, subpath exports, peer dependencies, build output, and public API surface.
-
 ## Requirements
-
 ### Requirement: Package name and CLI binary
 The package SHALL be published as `@mountlab/vue` and SHALL provide a `mountlab` CLI binary.
 
@@ -74,3 +72,19 @@ The package SHALL be built with `tsup` and output to `dist/`.
 #### Scenario: TypeScript declarations are included
 - **WHEN** a consumer imports from `@mountlab/vue`
 - **THEN** `.d.ts` declaration files SHALL be available for all exported subpaths
+
+### Requirement: Peer dependency metadata is declared
+The package metadata SHALL explicitly mark Vue and Vite peer dependencies as optional where package-manager metadata supports optional peers.
+
+#### Scenario: Vue peer is marked optional
+- **WHEN** `package.json` is inspected
+- **THEN** `peerDependenciesMeta.vue.optional` SHALL be `true`
+
+#### Scenario: Vite peer is marked optional
+- **WHEN** `package.json` is inspected
+- **THEN** `peerDependenciesMeta.vite.optional` SHALL be `true`
+
+#### Scenario: Peer version constraints remain
+- **WHEN** Vue and Vite peer metadata is added
+- **THEN** the package SHALL still declare `vue >= 3.4.0`
+- **AND** it SHALL still declare `vite >= 5.0.0`

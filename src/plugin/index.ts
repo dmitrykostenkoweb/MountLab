@@ -114,6 +114,7 @@ const validatedEntries = caseEntries.map(entry => ({
 assertUniqueCaseIds(validatedEntries)
 
 export const cases = validatedEntries.map(entry => entry.case)
+export const caseEntries = validatedEntries
 `
 }
 
@@ -123,11 +124,12 @@ function generateEntryModule(configPath: string): string {
   return [
     `import { createApp } from 'vue'`,
     `import WorkbenchApp from '@mountlab/vue/runtime'`,
-    `import { cases } from 'virtual:mountlab/cases'`,
+    `import { cases, caseEntries } from 'virtual:mountlab/cases'`,
     `import userConfig from ${JSON.stringify(normalizedConfig)}`,
     ``,
     `const app = createApp(WorkbenchApp)`,
     `app.provide('mountlab:cases', cases)`,
+    `app.provide('mountlab:caseEntries', caseEntries)`,
     `app.provide('mountlab:config', userConfig)`,
     `if (userConfig.setupApp) await userConfig.setupApp(app)`,
     `app.mount('#mountlab')`,
