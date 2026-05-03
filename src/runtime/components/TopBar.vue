@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ComponentCase, MountLabConfig } from '../../core/types.js'
+import type { ComponentCase, MountLabConfig, Viewport } from '../../core/types.js'
 import type { ViewportOption } from '../composables/useWorkbenchState.js'
 
 const props = defineProps<{
@@ -10,14 +10,24 @@ const props = defineProps<{
   wrapperWarning: string | null
   config: MountLabConfig
   viewportOptions: ViewportOption[]
+  editableViewport: Viewport
 }>()
 
 const emit = defineEmits<{
   'update:selectedVariantId': [id: string]
   'update:selectedWrapper': [key: string]
   'update:selectedViewport': [key: string]
+  'update:customViewport': [viewport: Partial<Viewport>]
   copyUrl: []
 }>()
+
+function emitDimensionUpdate(
+  dimension: 'width' | 'height',
+  event: Event,
+): void {
+  const value = (event.target as HTMLInputElement).value
+  emit('update:customViewport', { [dimension]: value })
+}
 </script>
 
 <template>
@@ -77,6 +87,34 @@ const emit = defineEmits<{
         </select>
       </label>
 
+      <div class="ml-topbar__dimensions" v-if="viewportOptions.length > 0">
+        <label class="ml-topbar__dimension-label">
+          W
+          <input
+            class="ml-topbar__dimension-input"
+            type="number"
+            min="100"
+            max="7680"
+            step="1"
+            :value="editableViewport.width"
+            @change="emitDimensionUpdate('width', $event)"
+          >
+        </label>
+        <span class="ml-topbar__dimension-separator">x</span>
+        <label class="ml-topbar__dimension-label">
+          H
+          <input
+            class="ml-topbar__dimension-input"
+            type="number"
+            min="100"
+            max="4320"
+            step="1"
+            :value="editableViewport.height"
+            @change="emitDimensionUpdate('height', $event)"
+          >
+        </label>
+      </div>
+
       <button
         class="ml-topbar__button"
         type="button"
@@ -121,6 +159,7 @@ const emit = defineEmits<{
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .ml-topbar__warning {
@@ -152,6 +191,35 @@ const emit = defineEmits<{
   padding: 3px 8px;
   font-size: 12px;
   cursor: pointer;
+}
+
+.ml-topbar__dimensions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.ml-topbar__dimension-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.ml-topbar__dimension-input {
+  width: 70px;
+  background: #1a1a2e;
+  border: 1px solid #2d2d4e;
+  color: #e2e8f0;
+  border-radius: 4px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.ml-topbar__dimension-separator {
+  color: #475569;
+  font-size: 12px;
 }
 
 .ml-topbar__button {

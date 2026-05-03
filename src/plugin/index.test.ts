@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Plugin } from 'vite'
-import { mountlab } from './index.js'
+import { isWorkbenchHtmlRequest, mountlab } from './index.js'
 
 function pluginLoad(plugin: Plugin, id: string): Promise<unknown> | unknown {
   if (typeof plugin.load !== 'function') {
@@ -20,6 +20,13 @@ function resolveConfig(plugin: Plugin, root: string): void {
 }
 
 describe('mountlab vite plugin', () => {
+  it('serves the workbench shell for root URLs with query state', () => {
+    expect(isWorkbenchHtmlRequest('/')).toBe(true)
+    expect(isWorkbenchHtmlRequest('/?viewport=custom&viewportWidth=640&viewportHeight=480')).toBe(true)
+    expect(isWorkbenchHtmlRequest('/index.html?case=button')).toBe(true)
+    expect(isWorkbenchHtmlRequest('/src/main.ts')).toBe(false)
+  })
+
   it('generates case metadata with stable relative paths', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
     mkdirSync(path.join(root, 'src', 'b'), { recursive: true })
@@ -31,6 +38,8 @@ describe('mountlab vite plugin', () => {
     resolveConfig(plugin, root)
     const code = String(await pluginLoad(plugin, '\0mountlab:cases'))
 
+    expect(code).toContain('const rawCaseEntries = [')
+    expect(code).toContain('const validatedEntries = rawCaseEntries.map')
     expect(code).toContain('export const caseEntries = validatedEntries')
     expect(code.indexOf('src/a/First.case.ts')).toBeLessThan(code.indexOf('src/b/Second.case.ts'))
   })

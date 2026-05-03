@@ -33,9 +33,11 @@ const workbenchState = useWorkbenchState(cases, config)
         :wrapper-warning="workbenchState.wrapperWarning.value"
         :config="config"
         :viewport-options="workbenchState.viewportOptions.value"
+        :editable-viewport="workbenchState.editableViewport.value"
         @update:selected-variant-id="workbenchState.selectVariant"
         @update:selected-wrapper="workbenchState.selectWrapper"
         @update:selected-viewport="workbenchState.selectViewport"
+        @update:custom-viewport="workbenchState.setCustomViewportDimensions"
         @copy-url="workbenchState.copyCurrentUrl"
       />
 
@@ -46,6 +48,7 @@ const workbenchState = useWorkbenchState(cases, config)
         :current-props="workbenchState.currentProps.value"
         :event-names="workbenchState.selectedCase.value?.events ?? []"
         :viewport="workbenchState.selectedViewport.value"
+        @resize-viewport="workbenchState.setCustomViewportDimensions"
         @event-captured="workbenchState.recordEvent"
       />
     </div>

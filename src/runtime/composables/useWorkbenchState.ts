@@ -7,6 +7,8 @@ interface UrlSelection {
   variantId: string | null
   wrapperKey: string | null
   viewportKey: string | null
+  viewportWidth: string | null
+  viewportHeight: string | null
 }
 
 type WrapperFallbackReason = 'missing-explicit' | 'missing-case' | 'missing-default' | null
@@ -49,13 +51,27 @@ interface SafeParseSchema {
   safeParse: (value: unknown) => unknown
 }
 
+const CUSTOM_VIEWPORT_KEY = 'custom'
+const DEFAULT_CUSTOM_VIEWPORT: Viewport = { width: 1280, height: 800 }
+const MIN_VIEWPORT_WIDTH = 100
+const MIN_VIEWPORT_HEIGHT = 100
+const MAX_VIEWPORT_WIDTH = 7680
+const MAX_VIEWPORT_HEIGHT = 4320
+
 function canUseBrowserUrl(): boolean {
   return typeof window !== 'undefined' && typeof window.location !== 'undefined'
 }
 
 function readUrlSelection(): UrlSelection {
   if (!canUseBrowserUrl()) {
-    return { caseId: null, variantId: null, wrapperKey: null, viewportKey: null }
+    return {
+      caseId: null,
+      variantId: null,
+      wrapperKey: null,
+      viewportKey: null,
+      viewportWidth: null,
+      viewportHeight: null,
+    }
   }
 
   const params = new URLSearchParams(window.location.search)
@@ -65,6 +81,8 @@ function readUrlSelection(): UrlSelection {
     variantId: params.get('variant'),
     wrapperKey: params.get('wrapper'),
     viewportKey: params.get('viewport'),
+    viewportWidth: params.get('viewportWidth'),
+    viewportHeight: params.get('viewportHeight'),
   }
 }
 
@@ -338,6 +356,18 @@ function writeUrlSelection(selection: UrlSelection): void {
   if (selection.viewportKey) url.searchParams.set('viewport', selection.viewportKey)
   else url.searchParams.delete('viewport')
 
+  if (
+    selection.viewportKey === CUSTOM_VIEWPORT_KEY
+    && selection.viewportWidth
+    && selection.viewportHeight
+  ) {
+    url.searchParams.set('viewportWidth', selection.viewportWidth)
+    url.searchParams.set('viewportHeight', selection.viewportHeight)
+  } else {
+    url.searchParams.delete('viewportWidth')
+    url.searchParams.delete('viewportHeight')
+  }
+
   window.history.replaceState(window.history.state, '', url)
 }
 
@@ -349,20 +379,55 @@ function formatViewportTitle(key: string): string {
     .join(' ') || key
 }
 
-function getViewportOptions(config: MountLabConfig): ViewportOption[] {
-  const configured = Object.entries(config.viewports ?? {}).map(([key, viewport]) => ({
+function parseViewportDimension(value: unknown): number | null {
+  if (typeof value === 'string' && value.trim() === '') return null
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return null
+
+  return Math.round(parsed)
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max)
+}
+
+export function normalizeViewportDimensions(
+  width: unknown,
+  height: unknown,
+): Viewport | null {
+  const parsedWidth = parseViewportDimension(width)
+  const parsedHeight = parseViewportDimension(height)
+
+  if (parsedWidth == null || parsedHeight == null) {
+    return null
+  }
+
+  return {
+    width: clamp(parsedWidth, MIN_VIEWPORT_WIDTH, MAX_VIEWPORT_WIDTH),
+    height: clamp(parsedHeight, MIN_VIEWPORT_HEIGHT, MAX_VIEWPORT_HEIGHT),
+  }
+}
+
+function getViewportOptions(config: MountLabConfig, customViewport: Viewport): ViewportOption[] {
+  const configured = Object.entries(config.viewports ?? {})
+    .filter(([key]) => key !== CUSTOM_VIEWPORT_KEY)
+    .map(([key, viewport]) => ({
     key,
     title: formatViewportTitle(key),
     viewport,
   }))
 
-  if (configured.some(option => option.viewport === null)) {
-    return configured
-  }
+  const options = configured.some(option => option.viewport === null)
+    ? configured
+    : [
+        { key: 'auto', title: 'Auto', viewport: null },
+        ...configured,
+      ]
 
   return [
-    { key: 'auto', title: 'Auto', viewport: null },
-    ...configured,
+    ...options,
+    { key: CUSTOM_VIEWPORT_KEY, title: 'Custom', viewport: customViewport },
   ]
 }
 
@@ -374,6 +439,14 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   const selectedWrapperKey = ref<string | null>(urlSelection.wrapperKey)
   const explicitWrapperKey = ref<string | null>(urlSelection.wrapperKey)
   const selectedViewportKey = ref<string | null>(urlSelection.viewportKey)
+  const initialCustomViewport = normalizeViewportDimensions(
+    urlSelection.viewportWidth,
+    urlSelection.viewportHeight,
+  )
+  const canSelectCustomViewport = ref(
+    urlSelection.viewportKey !== CUSTOM_VIEWPORT_KEY || initialCustomViewport != null,
+  )
+  const customViewport = ref<Viewport>(initialCustomViewport ?? DEFAULT_CUSTOM_VIEWPORT)
   const currentProps = ref<PropsRecord>({})
   const propsJsonText = ref('{}')
   const propsJsonParseError = ref<string | null>(null)
@@ -404,10 +477,14 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     formatWrapperWarning(wrapperResolution.value),
   )
 
-  const viewportOptions = computed<ViewportOption[]>(() => getViewportOptions(config))
+  const viewportOptions = computed<ViewportOption[]>(() => getViewportOptions(config, customViewport.value))
 
   const selectedViewport = computed<Viewport | null>(() =>
     viewportOptions.value.find(option => option.key === selectedViewportKey.value)?.viewport ?? null,
+  )
+
+  const editableViewport = computed<Viewport>(() =>
+    selectedViewport.value ?? customViewport.value ?? DEFAULT_CUSTOM_VIEWPORT,
   )
 
   function resolveCaseId(candidate: string | null): string | null {
@@ -425,8 +502,18 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   }
 
   function resolveViewportKey(candidate: string | null): string | null {
+    if (candidate === CUSTOM_VIEWPORT_KEY) {
+      return canSelectCustomViewport.value ? CUSTOM_VIEWPORT_KEY : resolveViewportKey(null)
+    }
+
     const options = viewportOptions.value
-    if (candidate && options.some(option => option.key === candidate)) return candidate
+    if (
+      candidate
+      && candidate !== CUSTOM_VIEWPORT_KEY
+      && options.some(option => option.key === candidate)
+    ) {
+      return candidate
+    }
 
     return (
       options.find(option => option.key === 'auto')?.key
@@ -547,7 +634,14 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
       clearEventLog()
     }
 
-    writeUrlSelection({ caseId, variantId, wrapperKey, viewportKey })
+    writeUrlSelection({
+      caseId,
+      variantId,
+      wrapperKey,
+      viewportKey,
+      viewportWidth: viewportKey === CUSTOM_VIEWPORT_KEY ? String(customViewport.value.width) : null,
+      viewportHeight: viewportKey === CUSTOM_VIEWPORT_KEY ? String(customViewport.value.height) : null,
+    })
   }
 
   function selectCase(caseId: string): void {
@@ -568,7 +662,25 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   }
 
   function selectViewport(viewportKey: string): void {
+    if (viewportKey === CUSTOM_VIEWPORT_KEY) {
+      canSelectCustomViewport.value = true
+    }
+
     selectedViewportKey.value = viewportKey
+    normalizeSelection({ resetProps: false })
+  }
+
+  function setCustomViewportDimensions(dimensions: Partial<Viewport>): void {
+    const nextViewport = normalizeViewportDimensions(
+      dimensions.width ?? editableViewport.value.width,
+      dimensions.height ?? editableViewport.value.height,
+    )
+
+    if (!nextViewport) return
+
+    canSelectCustomViewport.value = true
+    customViewport.value = nextViewport
+    selectedViewportKey.value = CUSTOM_VIEWPORT_KEY
     normalizeSelection({ resetProps: false })
   }
 
@@ -582,6 +694,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
       Object.entries(config.viewports ?? {})
         .map(([key, viewport]) => `${key}:${viewport?.width ?? 'auto'}x${viewport?.height ?? 'auto'}`)
         .join('|'),
+      `${customViewport.value.width}x${customViewport.value.height}`,
     ],
     () => normalizeSelection({ resetProps: true }),
   )
@@ -597,6 +710,8 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     wrapperWarning,
     viewportOptions,
     selectedViewport,
+    editableViewport,
+    customViewport,
     currentProps,
     propsJsonText,
     propsJsonParseError,
@@ -606,6 +721,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     selectVariant,
     selectWrapper,
     selectViewport,
+    setCustomViewportDimensions,
     updatePropsJsonText,
     resetCurrentProps,
     copyPropsJson,

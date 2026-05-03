@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Component } from 'vue'
 import type { ComponentCase, MountLabConfig } from '../../core/types.js'
-import { resolveWrapperSelection, useWorkbenchState } from './useWorkbenchState.js'
+import {
+  normalizeViewportDimensions,
+  resolveWrapperSelection,
+  useWorkbenchState,
+} from './useWorkbenchState.js'
 
 const ComponentStub = {} as Component
 
@@ -169,6 +173,109 @@ describe('resolveWrapperSelection', () => {
 
     expect(state.selectedViewportKey.value).toBe('auto')
     expect(state.selectedViewport.value).toBeNull()
+  })
+
+  it('restores and synchronizes custom viewport URL state', () => {
+    const { location } = stubBrowserUrl(
+      'http://localhost:4300/?keep=1&viewport=custom&viewportWidth=1980&viewportHeight=1080',
+    )
+    const state = useWorkbenchState(
+      [componentCase()],
+      config({}, undefined, {
+        mobile: { width: 390, height: 844 },
+      }),
+    )
+
+    expect(state.selectedViewportKey.value).toBe('custom')
+    expect(state.selectedViewport.value).toEqual({ width: 1980, height: 1080 })
+    expect(state.editableViewport.value).toEqual({ width: 1980, height: 1080 })
+
+    state.setCustomViewportDimensions({ width: 1440 })
+
+    expect(location.search).toContain('keep=1')
+    expect(location.search).toContain('viewport=custom')
+    expect(location.search).toContain('viewportWidth=1440')
+    expect(location.search).toContain('viewportHeight=1080')
+  })
+
+  it('falls back from invalid custom viewport URL params to auto mode', () => {
+    const { location } = stubBrowserUrl(
+      'http://localhost:4300/?viewport=custom&viewportWidth=wide&viewportHeight=0',
+    )
+    const state = useWorkbenchState(
+      [componentCase()],
+      config({}, undefined, {
+        mobile: { width: 390, height: 844 },
+      }),
+    )
+
+    expect(state.selectedViewportKey.value).toBe('auto')
+    expect(state.selectedViewport.value).toBeNull()
+    expect(location.search).toContain('viewport=auto')
+    expect(location.search).not.toContain('viewportWidth')
+    expect(location.search).not.toContain('viewportHeight')
+  })
+
+  it('switches preset viewport edits to custom while preserving the other dimension', () => {
+    const { location } = stubBrowserUrl('http://localhost:4300/?viewport=mobile')
+    const state = useWorkbenchState(
+      [componentCase()],
+      config({}, undefined, {
+        mobile: { width: 390, height: 844 },
+        desktop: { width: 1280, height: 800 },
+      }),
+    )
+
+    state.setCustomViewportDimensions({ width: '420' as unknown as number })
+
+    expect(state.selectedViewportKey.value).toBe('custom')
+    expect(state.selectedViewport.value).toEqual({ width: 420, height: 844 })
+    expect(location.search).toContain('viewport=custom')
+    expect(location.search).toContain('viewportWidth=420')
+    expect(location.search).toContain('viewportHeight=844')
+  })
+
+  it('clamps custom viewport dimensions and ignores invalid edits', () => {
+    stubBrowserUrl('http://localhost:4300/')
+    const state = useWorkbenchState([componentCase()], config({}, undefined))
+
+    state.setCustomViewportDimensions({ width: 99999, height: 1 })
+
+    expect(state.selectedViewportKey.value).toBe('custom')
+    expect(state.selectedViewport.value).toEqual({ width: 7680, height: 100 })
+
+    state.setCustomViewportDimensions({ width: 'bad' as unknown as number })
+
+    expect(state.selectedViewport.value).toEqual({ width: 7680, height: 100 })
+  })
+
+  it('keeps preset and auto viewport behavior after using custom dimensions', () => {
+    const { location } = stubBrowserUrl('http://localhost:4300/')
+    const state = useWorkbenchState(
+      [componentCase()],
+      config({}, undefined, {
+        mobile: { width: 390, height: 844 },
+      }),
+    )
+
+    state.setCustomViewportDimensions({ width: 500, height: 600 })
+    state.selectViewport('mobile')
+
+    expect(state.selectedViewportKey.value).toBe('mobile')
+    expect(state.selectedViewport.value).toEqual({ width: 390, height: 844 })
+    expect(location.search).toContain('viewport=mobile')
+    expect(location.search).not.toContain('viewportWidth')
+
+    state.selectViewport('auto')
+
+    expect(state.selectedViewportKey.value).toBe('auto')
+    expect(state.selectedViewport.value).toBeNull()
+  })
+
+  it('normalizes viewport dimensions', () => {
+    expect(normalizeViewportDimensions('1980', '1080')).toEqual({ width: 1980, height: 1080 })
+    expect(normalizeViewportDimensions('bad', '1080')).toBeNull()
+    expect(normalizeViewportDimensions(10, 99999)).toEqual({ width: 100, height: 4320 })
   })
 
   it('copies the current normalized URL without changing selection state', async () => {

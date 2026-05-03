@@ -39,7 +39,7 @@ function generateCasesModule(casePaths: string[], root: string): string {
 
   return `${imports}
 
-const caseEntries = [
+const rawCaseEntries = [
 ${entries}
 ]
 
@@ -106,7 +106,7 @@ function assertUniqueCaseIds(cases) {
   throw new Error(['[MountLab] Duplicate component case IDs', '', ...details].join('\\n'))
 }
 
-const validatedEntries = caseEntries.map(entry => ({
+const validatedEntries = rawCaseEntries.map(entry => ({
   case: validateCaseEntry(entry),
   path: entry.path,
 }))
@@ -152,6 +152,11 @@ function getHtmlShell(): string {
 </html>`
 }
 
+export function isWorkbenchHtmlRequest(url: string | undefined): boolean {
+  const pathname = url?.split('?')[0]
+  return pathname === '/' || pathname === '/index.html'
+}
+
 export function mountlab(config: MountLabConfig = {}): Plugin {
   let root = process.cwd()
   let configPath = path.join(root, 'mountlab.config.ts')
@@ -168,7 +173,7 @@ export function mountlab(config: MountLabConfig = {}): Plugin {
     configureServer(server: ViteDevServer) {
       // Serve workbench HTML at root
       server.middlewares.use((req, res, next) => {
-        if (req.url === '/' || req.url === '/index.html') {
+        if (isWorkbenchHtmlRequest(req.url)) {
           res.setHeader('Content-Type', 'text/html; charset=utf-8')
           res.end(getHtmlShell())
           return
