@@ -1,3 +1,4 @@
+import fs from 'node:fs'
 import { pathToFileURL } from 'node:url'
 import { Command } from 'commander'
 import { runInit } from './commands/init.js'
@@ -55,6 +56,9 @@ export function createProgram(handlers: CliHandlers = { runInit, runAdd, runDev 
   return program
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (
+  process.argv[1]
+  && import.meta.url === pathToFileURL(fs.realpathSync(process.argv[1])).href
+) {
   createProgram().parse()
 }

@@ -34,6 +34,7 @@
     "build:lib": "tsup",
     "build:runtime": "vite build --config vite.runtime.config.ts",
     "dev": "tsup --watch",
+    "playground": "npm run build && npm install --prefix examples/playground && npm --prefix examples/playground run mountlab",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
