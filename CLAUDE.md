@@ -9,6 +9,7 @@ npm run build         # full build: tsup (lib + CLI) + vite (runtime UI)
 npm run build:lib     # tsup only — compiles src/ to dist/ (lib + CLI binary)
 npm run build:runtime # vite only — compiles runtime Vue UI to dist/runtime/
 npm run dev           # tsup --watch (no runtime hot-reload)
+npm run playground    # build + run the local example app in examples/playground/
 npm run test          # vitest run
 npm run typecheck     # tsc --noEmit
 ```
@@ -46,6 +47,11 @@ The workbench is injected via `/__mountlab/entry.js`.
 
 State is managed in `src/runtime/composables/useWorkbenchState.ts` and synced to the URL.
 
+Two utility modules keep component files thin:
+
+- `src/runtime/caseMetadata.ts` — pure functions for sidebar grouping, fallback group derivation from file path, search text normalisation, and filtering
+- `src/runtime/viewportResize.ts` — pure drag-math for custom viewport resizing (`ViewportResizeAxis`, `calculateResizedViewport`)
+
 ### Build outputs
 
 `tsup.config.ts` produces two separate entry points:
@@ -67,6 +73,18 @@ State is managed in `src/runtime/composables/useWorkbenchState.ts` and synced to
 
 Users create `.case.ts` files alongside their components using `defineComponentCase()`. The CLI `add` command scaffolds these. The Vite plugin discovers them via fast-glob and validates their shape at dev-server startup.
 
+## Local example app
+
+`examples/playground/` is a minimal Vue 3 + Vite app that consumes the built package via `file:../..`. Run it with:
+
+```bash
+npm run playground   # build + npm install in examples/playground + mountlab dev --open
+```
+
+It lives under `examples/playground/src/` with components and case files for manual end-to-end testing.
+
 ## OpenSpec workflow
 
 Changes are tracked under `openspec/`. Use the `opsx:*` skills to create, implement, verify, and archive changes.
+
+Active changes live in `openspec/changes/<change-name>/` (proposal, design, specs, tasks). Archived changes are under `openspec/changes/archive/`.
