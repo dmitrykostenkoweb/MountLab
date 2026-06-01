@@ -6,7 +6,6 @@ export default defineComponentCase({
   title: 'Product Card',
   group: 'Commerce',
   component: ProductCard,
-  wrapper: 'default',
   variants: [
     {
       id: 'default',
@@ -32,5 +31,5 @@ export default defineComponentCase({
     },
   ],
   events: ['select', 'restock'],
-  notes: 'Use this case to test props editing, variant switching, wrappers, and event capture.',
+  notes: 'Use this case to test props editing, variant switching, and event capture.',
 })
