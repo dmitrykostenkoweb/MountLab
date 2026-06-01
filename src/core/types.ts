@@ -14,6 +14,13 @@ export interface MountLabConfig {
   cases?: string[]
 
   /**
+   * Glob patterns for auto-discovery of Vue component files.
+   * Components without an authored sidecar *.case.ts file get a minimal
+   * synthetic case with a default variant.
+   */
+  components?: string[]
+
+  /**
    * Called with the Vue app instance before mounting.
    * Use this to install plugins: Pinia, PrimeVue, i18n, etc.
    */

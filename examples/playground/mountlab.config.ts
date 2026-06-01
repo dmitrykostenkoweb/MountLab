@@ -3,6 +3,7 @@ import { defineMountLabConfig } from '@mountlab/vue'
 export default defineMountLabConfig({
   port: 4301,
   cases: ['src/**/*.case.ts'],
+  components: ['src/components/**/*.vue'],
   viewports: {
     auto: null,
     mobile: { width: 390, height: 844 },

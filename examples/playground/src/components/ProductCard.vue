@@ -1,12 +1,16 @@
 <script setup lang="ts">
 const props = withDefaults(defineProps<{
-  name: string
-  category: string
-  price: number
-  stock: number
+  name?: string
+  category?: string
+  price?: number
+  stock?: number
   selected?: boolean
   featured?: boolean
 }>(), {
+  name: 'Trail Pack',
+  category: 'Equipment',
+  price: 129,
+  stock: 24,
   selected: false,
   featured: false,
 })

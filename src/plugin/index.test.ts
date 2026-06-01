@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { Plugin } from 'vite'
+import type { MountLabConfig } from '../core/types.js'
 import { isWorkbenchHtmlRequest, mountlab } from './index.js'
+
+const configWithComponentDiscovery: MountLabConfig = {
+  components: ['src/components/**/*.vue'],
+}
 
 function pluginLoad(plugin: Plugin, id: string): Promise<unknown> | unknown {
   if (typeof plugin.load !== 'function') {
@@ -52,5 +57,76 @@ describe('mountlab vite plugin', () => {
     expect(code).toContain('[MountLab] Duplicate component case IDs')
     expect(code).toContain('component is required')
     expect(code).toContain('variants must be an array')
+  })
+
+  it('generates synthetic cases for configured Vue components', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
+    mkdirSync(path.join(root, 'src', 'components'), { recursive: true })
+    writeFileSync(path.join(root, 'src', 'components', 'ProductCard.vue'), '<template />')
+
+    const plugin = mountlab(configWithComponentDiscovery)
+    resolveConfig(plugin, root)
+    const code = String(await pluginLoad(plugin, '\0mountlab:cases'))
+
+    expect(code).toContain('import component0 from ')
+    expect(code).toContain('src/components/ProductCard.vue')
+    expect(code).toContain('id: "product-card"')
+    expect(code).toContain('title: "Product Card"')
+    expect(code).toContain('component: component0')
+    expect(code).toContain("variants: [{ id: 'default', title: 'Default', props: {} }]")
+  })
+
+  it('does not discover raw Vue components when component discovery is omitted', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
+    mkdirSync(path.join(root, 'src', 'components'), { recursive: true })
+    writeFileSync(path.join(root, 'src', 'components', 'ProductCard.vue'), '<template />')
+
+    const plugin = mountlab({ cases: [] })
+    resolveConfig(plugin, root)
+    const code = String(await pluginLoad(plugin, '\0mountlab:cases'))
+
+    expect(code).not.toContain('ProductCard.vue')
+    expect(code).not.toContain('product-card')
+  })
+
+  it('lets authored sidecar cases suppress synthetic component cases', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
+    mkdirSync(path.join(root, 'src', 'components', 'product-card'), { recursive: true })
+    writeFileSync(path.join(root, 'src', 'components', 'ProductCard.vue'), '<template />')
+    writeFileSync(path.join(root, 'src', 'components', 'ProductCard.case.ts'), 'export default {}')
+    writeFileSync(path.join(root, 'src', 'components', 'product-card', 'index.vue'), '<template />')
+    writeFileSync(path.join(root, 'src', 'components', 'product-card', 'ProductCard.case.ts'), 'export default {}')
+
+    const plugin = mountlab({
+      cases: ['src/**/*.case.ts'],
+      components: ['src/components/**/*.vue'],
+    })
+    resolveConfig(plugin, root)
+    const code = String(await pluginLoad(plugin, '\0mountlab:cases'))
+
+    expect(code).toContain('src/components/ProductCard.case.ts')
+    expect(code).toContain('src/components/product-card/ProductCard.case.ts')
+    expect(code).not.toContain('src/components/ProductCard.vue')
+    expect(code).not.toContain('src/components/product-card/index.vue')
+    expect(code).not.toContain('component: component0')
+  })
+
+  it('uses deterministic ordering after merging authored and synthetic cases', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
+    mkdirSync(path.join(root, 'src', 'a'), { recursive: true })
+    mkdirSync(path.join(root, 'src', 'b'), { recursive: true })
+    writeFileSync(path.join(root, 'src', 'b', 'Second.vue'), '<template />')
+    writeFileSync(path.join(root, 'src', 'a', 'First.case.ts'), 'export default {}')
+
+    const plugin = mountlab({
+      cases: ['src/**/*.case.ts'],
+      components: ['src/**/*.vue'],
+    })
+    resolveConfig(plugin, root)
+    const code = String(await pluginLoad(plugin, '\0mountlab:cases'))
+
+    expect(code.indexOf('src/a/First.case.ts')).toBeLessThan(code.indexOf('src/b/Second.vue'))
+    expect(code).toContain('[MountLab] Duplicate component case IDs')
+    expect(code).toContain('Found in:')
   })
 })

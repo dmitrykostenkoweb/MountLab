@@ -17,6 +17,14 @@ async function resolveCasePaths(patterns: string[], root: string): Promise<strin
   return files.sort((a, b) => a.localeCompare(b))
 }
 
+async function resolveComponentPaths(patterns: string[] | undefined, root: string): Promise<string[]> {
+  if (!patterns || patterns.length === 0) return []
+  const files = await fg(patterns, { cwd: root, absolute: true })
+  return files
+    .filter(file => file.endsWith('.vue'))
+    .sort((a, b) => a.localeCompare(b))
+}
+
 function formatModulePath(filePath: string): string {
   return filePath.replace(/\\/g, '/')
 }
@@ -29,12 +37,108 @@ function formatDiagnosticPath(filePath: string, root: string): string {
   return formatModulePath(displayPath)
 }
 
-function generateCasesModule(casePaths: string[], root: string): string {
-  const imports = casePaths
-    .map((p, i) => `import case${i} from ${JSON.stringify(formatModulePath(p))}`)
+function toKebabCase(value: string): string {
+  return value
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1-$2')
+    .replace(/([a-z\d])([A-Z])/g, '$1-$2')
+    .replace(/[_\s]+/g, '-')
+    .toLowerCase()
+}
+
+function toTitle(value: string): string {
+  return toKebabCase(value)
+    .split('-')
+    .filter(Boolean)
+    .map(part => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ')
+}
+
+function getComponentStem(componentPath: string): string {
+  const basename = path.basename(componentPath, '.vue')
+  if (basename !== 'index') return basename
+  return path.basename(path.dirname(componentPath))
+}
+
+function getExpectedSidecarPath(componentPath: string): string {
+  const dir = path.dirname(componentPath)
+  const basename = path.basename(componentPath, '.vue')
+  const stem = basename === 'index'
+    ? toTitle(path.basename(dir)).replace(/\s+/g, '')
+    : basename
+
+  return path.join(dir, `${stem}.case.ts`)
+}
+
+interface AuthoredCaseRegistryEntry {
+  kind: 'authored'
+  filePath: string
+  importName: string
+}
+
+interface SyntheticCaseRegistryEntry {
+  kind: 'synthetic'
+  filePath: string
+  importName: string
+  id: string
+  title: string
+}
+
+type CaseRegistryEntry = AuthoredCaseRegistryEntry | SyntheticCaseRegistryEntry
+
+function resolveCaseRegistryEntries(
+  casePaths: string[],
+  componentPaths: string[],
+  root: string,
+): CaseRegistryEntry[] {
+  const authoredSidecars = new Set(casePaths.map(formatModulePath))
+  const authoredEntries: CaseRegistryEntry[] = casePaths.map((filePath, index) => ({
+    kind: 'authored',
+    filePath,
+    importName: `case${index}`,
+  }))
+  const syntheticEntries: CaseRegistryEntry[] = componentPaths
+    .filter(componentPath => !authoredSidecars.has(formatModulePath(getExpectedSidecarPath(componentPath))))
+    .map((filePath, index) => {
+      const stem = getComponentStem(filePath)
+      return {
+        kind: 'synthetic',
+        filePath,
+        importName: `component${index}`,
+        id: toKebabCase(stem),
+        title: toTitle(stem),
+      }
+    })
+
+  return [...authoredEntries, ...syntheticEntries]
+    .sort((a, b) =>
+      formatDiagnosticPath(a.filePath, root).localeCompare(formatDiagnosticPath(b.filePath, root)),
+    )
+}
+
+function generateCasesModule(casePaths: string[], componentPaths: string[], root: string): string {
+  const registryEntries = resolveCaseRegistryEntries(casePaths, componentPaths, root)
+  const imports = registryEntries
+    .map(entry => `import ${entry.importName} from ${JSON.stringify(formatModulePath(entry.filePath))}`)
     .join('\n')
-  const entries = casePaths
-    .map((p, i) => `  { value: case${i}, path: ${JSON.stringify(formatDiagnosticPath(p, root))} }`)
+  const entries = registryEntries
+    .map((entry) => {
+      const diagnosticPath = JSON.stringify(formatDiagnosticPath(entry.filePath, root))
+      if (entry.kind === 'authored') {
+        return `  { value: ${entry.importName}, path: ${diagnosticPath} }`
+      }
+
+      return [
+        `  {`,
+        `    value: {`,
+        `      id: ${JSON.stringify(entry.id)},`,
+        `      title: ${JSON.stringify(entry.title)},`,
+        `      component: ${entry.importName},`,
+        `      variants: [{ id: 'default', title: 'Default', props: {} }],`,
+        `    },`,
+        `    path: ${diagnosticPath},`,
+        `  }`,
+      ].join('\n')
+    })
     .join(',\n')
 
   return `${imports}
@@ -164,6 +268,7 @@ export function mountlab(config: MountLabConfig = {}): Plugin {
   let root = process.cwd()
   let configPath = path.join(root, 'mountlab.config.ts')
   let casePaths: string[] = []
+  let componentPaths: string[] = []
 
   return {
     name: 'mountlab',
@@ -185,7 +290,9 @@ export function mountlab(config: MountLabConfig = {}): Plugin {
       })
 
       // Watch for case file changes and trigger full reload
-      const patterns = config.cases ?? ['src/**/*.case.ts']
+      const casePatterns = config.cases ?? ['src/**/*.case.ts']
+      const componentPatterns = config.components ?? []
+      const patterns = [...casePatterns, ...componentPatterns]
       const absPatterns = patterns.map(p =>
         path.isAbsolute(p) ? p : path.join(root, p),
       )
@@ -196,15 +303,16 @@ export function mountlab(config: MountLabConfig = {}): Plugin {
         const mod = server.moduleGraph.getModuleById(RESOLVED_CASES)
         if (mod) server.moduleGraph.invalidateModule(mod)
         casePaths = await resolveCasePaths(config.cases ?? [], root)
+        componentPaths = await resolveComponentPaths(config.components, root)
         server.ws.send({ type: 'full-reload' })
       }
 
       server.watcher.on('add', (file) => {
-        if (file.endsWith('.case.ts')) invalidateCases()
+        if (file.endsWith('.case.ts') || file.endsWith('.vue')) invalidateCases()
       })
 
       server.watcher.on('unlink', (file) => {
-        if (file.endsWith('.case.ts')) invalidateCases()
+        if (file.endsWith('.case.ts') || file.endsWith('.vue')) invalidateCases()
       })
     },
 
@@ -217,7 +325,8 @@ export function mountlab(config: MountLabConfig = {}): Plugin {
     async load(id) {
       if (id === RESOLVED_CASES) {
         casePaths = await resolveCasePaths(config.cases ?? [], root)
-        return generateCasesModule(casePaths, root)
+        componentPaths = await resolveComponentPaths(config.components, root)
+        return generateCasesModule(casePaths, componentPaths, root)
       }
       if (id === RESOLVED_CONFIG) {
         return `export const config = ${JSON.stringify({ port: config.port ?? 4300 })}`

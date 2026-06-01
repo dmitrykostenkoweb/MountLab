@@ -13,6 +13,7 @@ import type { ComponentCase, MountLabConfig } from './types.js'
  * export default defineMountLabConfig({
  *   port: 4300,
  *   cases: ['src/**\/*.case.ts'],
+ *   components: ['src/components/**\/*.vue'],
  *   wrappers: { default: DefaultWrapper },
  *   defaultWrapper: 'default',
  *   setupApp(app) {
