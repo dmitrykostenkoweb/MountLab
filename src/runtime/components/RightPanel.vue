@@ -1,48 +1,65 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import type { ComponentCase, ComponentVariant } from "../../core/types.js";
+import { computed, ref } from 'vue'
+import type { ComponentCase, ComponentVariant } from '../../core/types.js'
 import type {
   EventLogEntry,
+  PropEditorField,
+  PropFieldEdit,
   PropsValidationResult,
-} from "../composables/useWorkbenchState.js";
+} from '../composables/useWorkbenchState.js'
 
-type TabId = "props" | "validation" | "events" | "notes";
+type TabId = 'props' | 'validation' | 'events' | 'notes'
 
 const props = defineProps<{
-  selectedCase: ComponentCase | null;
-  selectedVariant: ComponentVariant | null;
-  propsJsonText: string;
-  propsJsonParseError: string | null;
-  validationResult: PropsValidationResult;
-  eventLog: EventLogEntry[];
-}>();
+  selectedCase: ComponentCase | null
+  selectedVariant: ComponentVariant | null
+  propFields: PropEditorField[]
+  validationResult: PropsValidationResult
+  eventLog: EventLogEntry[]
+}>()
 
 const emit = defineEmits<{
-  "update:propsJsonText": [value: string];
-  resetProps: [];
-  copyProps: [];
-  clearEvents: [];
-}>();
+  'update:propField': [key: string, edit: PropFieldEdit]
+  resetProps: []
+  copyProps: []
+  clearEvents: []
+}>()
 
-const activeTab = ref<TabId>("props");
+const activeTab = ref<TabId>('props')
 
 const validationBadge = computed(() => {
-  if (props.validationResult.status === "invalid") return "!";
-  return null;
-});
+  if (props.validationResult.status === 'invalid') return '!'
+  return null
+})
 
 const eventsBadge = computed(() =>
   props.eventLog.length > 0 ? props.eventLog.length : null,
-);
+)
+
+function updateStringField(field: PropEditorField, value: string): void {
+  emit('update:propField', field.key, { kind: 'string', value })
+}
+
+function updateNumberField(field: PropEditorField, value: string): void {
+  emit('update:propField', field.key, { kind: 'number', value })
+}
+
+function updateBooleanField(field: PropEditorField, value: boolean): void {
+  emit('update:propField', field.key, { kind: 'boolean', value })
+}
+
+function updateJsonField(field: PropEditorField, value: string): void {
+  emit('update:propField', field.key, { kind: 'json', value })
+}
 
 function formatPayload(payload: unknown): string {
-  if (payload === undefined) return "undefined";
-  if (typeof payload === "string") return payload;
+  if (payload === undefined) return 'undefined'
+  if (typeof payload === 'string') return payload
 
   try {
-    return JSON.stringify(payload, null, 2);
+    return JSON.stringify(payload, null, 2)
   } catch {
-    return String(payload);
+    return String(payload)
   }
 }
 </script>
@@ -84,7 +101,7 @@ function formatPayload(payload: unknown): string {
         role="tabpanel"
       >
         <div class="ml-panel__section-header">
-          <h2 class="ml-panel__title">Props JSON</h2>
+          <h2 class="ml-panel__title">Props</h2>
           <div class="ml-panel__actions">
             <button
               class="ml-panel__btn"
@@ -105,30 +122,98 @@ function formatPayload(payload: unknown): string {
           </div>
         </div>
 
-        <textarea
-          class="ml-panel__editor"
-          :value="propsJsonText"
-          :disabled="!selectedCase"
-          spellcheck="false"
-          @input="
-            emit(
-              'update:propsJsonText',
-              ($event.target as HTMLTextAreaElement).value,
-            )
-          "
-          @change="
-            emit(
-              'update:propsJsonText',
-              ($event.target as HTMLTextAreaElement).value,
-            )
-          "
-        />
+        <div v-if="propFields.length > 0" class="ml-panel__prop-list">
+          <label
+            v-for="field in propFields"
+            :key="field.key"
+            class="ml-panel__prop-field"
+          >
+            <span class="ml-panel__prop-label">
+              <span class="ml-panel__prop-name">{{ field.key }}</span>
+              <span class="ml-panel__prop-kind">{{ field.kind }}</span>
+            </span>
 
-        <p
-          v-if="propsJsonParseError"
-          class="ml-panel__message ml-panel__message--error"
-        >
-          {{ propsJsonParseError }}
+            <input
+              v-if="field.kind === 'string'"
+              class="ml-panel__input"
+              type="text"
+              :value="field.draftText"
+              :disabled="!selectedCase"
+              @input="
+                updateStringField(
+                  field,
+                  ($event.target as HTMLInputElement).value,
+                )
+              "
+            />
+
+            <input
+              v-else-if="field.kind === 'number'"
+              class="ml-panel__input"
+              type="number"
+              :value="field.draftText"
+              :disabled="!selectedCase"
+              @input="
+                updateNumberField(
+                  field,
+                  ($event.target as HTMLInputElement).value,
+                )
+              "
+            />
+
+            <span v-else-if="field.kind === 'boolean'" class="ml-panel__switch-row">
+              <input
+                :id="`ml-prop-${field.key}`"
+                class="ml-panel__switch-input"
+                type="checkbox"
+                :checked="Boolean(field.value)"
+                :disabled="!selectedCase"
+                @change="
+                  updateBooleanField(
+                    field,
+                    ($event.target as HTMLInputElement).checked,
+                  )
+                "
+              />
+              <span class="ml-panel__switch" aria-hidden="true">
+                <span class="ml-panel__switch-thumb" />
+              </span>
+              <span class="ml-panel__switch-text">
+                {{ field.value ? 'On' : 'Off' }}
+              </span>
+            </span>
+
+            <textarea
+              v-else
+              class="ml-panel__editor ml-panel__editor--field"
+              :value="field.draftText"
+              :disabled="!selectedCase"
+              spellcheck="false"
+              @input="
+                updateJsonField(
+                  field,
+                  ($event.target as HTMLTextAreaElement).value,
+                )
+              "
+              @change="
+                updateJsonField(
+                  field,
+                  ($event.target as HTMLTextAreaElement).value,
+                )
+              "
+            />
+
+            <span
+              v-if="field.error"
+              class="ml-panel__field-error"
+            >
+              {{ field.error }}
+            </span>
+          </label>
+        </div>
+
+        <p v-else class="ml-panel__muted">
+          No props for this variant.
         </p>
 
         <!-- Inline validation status in Props tab -->
@@ -453,6 +538,67 @@ function formatPayload(payload: unknown): string {
 
 /* Props editor */
 
+.ml-panel__prop-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ml-panel__prop-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ml-panel__prop-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ml-panel__prop-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--ml-font-mono);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ml-text-strong);
+}
+
+.ml-panel__prop-kind {
+  flex-shrink: 0;
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: var(--ml-bg-input);
+  color: var(--ml-text-muted);
+  font-family: var(--ml-font-mono);
+  font-size: 9.5px;
+  line-height: 1;
+}
+
+.ml-panel__input {
+  display: block;
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--ml-border);
+  border-radius: 5px;
+  padding: 0 9px;
+  background: var(--ml-bg-input);
+  color: var(--ml-text);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.ml-panel__input:focus {
+  border-color: var(--ml-border-focus);
+}
+
+.ml-panel__input:disabled {
+  opacity: 0.55;
+}
+
 .ml-panel__editor {
   display: block;
   width: 100%;
@@ -476,6 +622,76 @@ function formatPayload(payload: unknown): string {
 
 .ml-panel__editor:disabled {
   opacity: 0.55;
+}
+
+.ml-panel__editor--field {
+  min-height: 86px;
+  font-size: 11.5px;
+}
+
+.ml-panel__switch-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  cursor: pointer;
+}
+
+.ml-panel__switch-input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.ml-panel__switch {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  flex: 0 0 34px;
+  border-radius: 999px;
+  background: var(--ml-border-strong);
+  transition: background 0.1s;
+}
+
+.ml-panel__switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--ml-bg-chrome);
+  transition: transform 0.1s;
+}
+
+.ml-panel__switch-input:checked + .ml-panel__switch {
+  background: var(--ml-accent);
+}
+
+.ml-panel__switch-input:checked + .ml-panel__switch .ml-panel__switch-thumb {
+  transform: translateX(16px);
+}
+
+.ml-panel__switch-input:focus-visible + .ml-panel__switch {
+  outline: 2px solid var(--ml-border-focus);
+  outline-offset: 2px;
+}
+
+.ml-panel__switch-input:disabled + .ml-panel__switch,
+.ml-panel__switch-input:disabled ~ .ml-panel__switch-text {
+  opacity: 0.55;
+}
+
+.ml-panel__switch-text {
+  color: var(--ml-text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.ml-panel__field-error {
+  color: var(--ml-error);
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 /* Inline validation */

@@ -14,6 +14,28 @@ interface UrlSelection {
 type WrapperFallbackReason = 'missing-explicit' | 'missing-case' | 'missing-default' | null
 
 type PropsRecord = Record<string, unknown>
+type PropFieldKind = 'string' | 'number' | 'boolean' | 'json'
+type RuntimePropConstructor =
+  | StringConstructor
+  | NumberConstructor
+  | BooleanConstructor
+  | ArrayConstructor
+  | ObjectConstructor
+  | FunctionConstructor
+
+export interface PropEditorField {
+  key: string
+  kind: PropFieldKind
+  value: unknown
+  draftText: string
+  error: string | null
+}
+
+export type PropFieldEdit =
+  | { kind: 'string'; value: string }
+  | { kind: 'number'; value: string }
+  | { kind: 'boolean'; value: boolean }
+  | { kind: 'json'; value: string }
 
 export interface ValidationIssue {
   path: string
@@ -102,6 +124,87 @@ function cloneProps(props: unknown): PropsRecord {
   return JSON.parse(JSON.stringify(props)) as PropsRecord
 }
 
+function hasOwnKeys(value: PropsRecord): boolean {
+  return Object.keys(value).length > 0
+}
+
+function isPropConstructor(value: unknown): value is RuntimePropConstructor {
+  return (
+    value === String
+    || value === Number
+    || value === Boolean
+    || value === Array
+    || value === Object
+  )
+}
+
+function getPropOptionType(option: unknown): unknown {
+  if (isPropConstructor(option) || Array.isArray(option)) return option
+  if (option != null && typeof option === 'object' && 'type' in option) {
+    return (option as { type?: unknown }).type
+  }
+  return null
+}
+
+function propOptionIncludesType(option: unknown, type: RuntimePropConstructor): boolean {
+  const optionType = getPropOptionType(option)
+  if (Array.isArray(optionType)) return optionType.includes(type)
+  return optionType === type
+}
+
+function getPropDefaultValue(option: unknown): unknown {
+  if (option == null || typeof option !== 'object' || !('default' in option)) {
+    return undefined
+  }
+
+  const defaultValue = (option as { default?: unknown }).default
+  if (typeof defaultValue === 'function' && !propOptionIncludesType(option, Function)) {
+    try {
+      return defaultValue()
+    } catch {
+      return undefined
+    }
+  }
+
+  return defaultValue
+}
+
+function getPlaceholderPropValue(option: unknown): unknown {
+  if (propOptionIncludesType(option, String)) return ''
+  if (propOptionIncludesType(option, Number)) return 0
+  if (propOptionIncludesType(option, Boolean)) return false
+  if (propOptionIncludesType(option, Array)) return []
+  if (propOptionIncludesType(option, Object)) return {}
+  return null
+}
+
+function derivePropsFromComponent(component: Component | null | undefined): PropsRecord {
+  const runtimeProps = (component as { props?: unknown } | null | undefined)?.props
+  const props: PropsRecord = {}
+
+  if (Array.isArray(runtimeProps)) {
+    for (const key of runtimeProps) {
+      if (typeof key === 'string' && key) {
+        props[key] = null
+      }
+    }
+    return props
+  }
+
+  if (runtimeProps == null || typeof runtimeProps !== 'object') {
+    return props
+  }
+
+  for (const [key, option] of Object.entries(runtimeProps)) {
+    const defaultValue = getPropDefaultValue(option)
+    props[key] = defaultValue === undefined
+      ? getPlaceholderPropValue(option)
+      : defaultValue
+  }
+
+  return cloneProps(props)
+}
+
 function isPropsRecord(value: unknown): value is PropsRecord {
   return value != null && typeof value === 'object' && !Array.isArray(value)
 }
@@ -112,6 +215,21 @@ function formatPropsJson(props: PropsRecord): string {
   } catch {
     return '{}'
   }
+}
+
+function formatFieldJson(value: unknown): string {
+  try {
+    return JSON.stringify(value, null, 2)
+  } catch {
+    return stringifyUnknown(value)
+  }
+}
+
+function getPropFieldKind(value: unknown): PropFieldKind {
+  if (typeof value === 'string') return 'string'
+  if (typeof value === 'number') return 'number'
+  if (typeof value === 'boolean') return 'boolean'
+  return 'json'
 }
 
 function hasSafeParse(schema: unknown): schema is SafeParseSchema {
@@ -450,6 +568,8 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   const currentProps = ref<PropsRecord>({})
   const propsJsonText = ref('{}')
   const propsJsonParseError = ref<string | null>(null)
+  const propFieldDrafts = ref<Record<string, string>>({})
+  const propFieldErrors = ref<Record<string, string>>({})
   const propsValidationResult = ref<PropsValidationResult>(unavailableValidation())
   const eventLog = ref<EventLogEntry[]>([])
   const wrapperResolution = ref<WrapperResolution>({
@@ -485,6 +605,21 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
 
   const editableViewport = computed<Viewport>(() =>
     selectedViewport.value ?? customViewport.value ?? DEFAULT_CUSTOM_VIEWPORT,
+  )
+
+  const propFields = computed<PropEditorField[]>(() =>
+    Object.entries(currentProps.value).map(([key, value]) => {
+      const kind = getPropFieldKind(value)
+      const fallbackDraft = kind === 'json' ? formatFieldJson(value) : String(value)
+
+      return {
+        key,
+        kind,
+        value,
+        draftText: propFieldDrafts.value[key] ?? fallbackDraft,
+        error: propFieldErrors.value[key] ?? null,
+      }
+    }),
   )
 
   function resolveCaseId(candidate: string | null): string | null {
@@ -524,15 +659,107 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   }
 
   function resetCurrentProps(): void {
-    const nextProps = cloneProps(selectedVariant.value?.props)
+    const variantProps = cloneProps(selectedVariant.value?.props)
+    const nextProps = hasOwnKeys(variantProps)
+      ? variantProps
+      : derivePropsFromComponent(selectedCase.value?.component)
     propsJsonText.value = formatPropsJson(nextProps)
     propsJsonParseError.value = null
+    propFieldDrafts.value = {}
+    propFieldErrors.value = {}
     const validation = validateProps(nextProps, selectedCase.value?.propsSchema)
     propsValidationResult.value = validation.result
     if (validation.ok) {
       currentProps.value = cloneProps(validation.props)
       propsJsonText.value = formatPropsJson(currentProps.value)
     }
+  }
+
+  function commitPropsField(
+    key: string,
+    rawDraft: string | null,
+    nextValue: unknown,
+  ): void {
+    const nextProps = cloneProps(currentProps.value)
+    nextProps[key] = nextValue
+
+    const validation = validateProps(nextProps, selectedCase.value?.propsSchema)
+    propsValidationResult.value = validation.result
+
+    if (!validation.ok) {
+      propFieldDrafts.value = rawDraft == null
+        ? propFieldDrafts.value
+        : { ...propFieldDrafts.value, [key]: rawDraft }
+      propFieldErrors.value = {
+        ...propFieldErrors.value,
+        [key]: validation.result.message,
+      }
+      return
+    }
+
+    const nextDrafts = { ...propFieldDrafts.value }
+    const nextErrors = { ...propFieldErrors.value }
+    delete nextDrafts[key]
+    delete nextErrors[key]
+
+    currentProps.value = cloneProps(validation.props)
+    propsJsonText.value = formatPropsJson(currentProps.value)
+    propsJsonParseError.value = null
+    propFieldDrafts.value = nextDrafts
+    propFieldErrors.value = nextErrors
+  }
+
+  function updatePropField(key: string, edit: PropFieldEdit): void {
+    if (!Object.prototype.hasOwnProperty.call(currentProps.value, key)) return
+
+    if (edit.kind === 'string') {
+      commitPropsField(key, edit.value, edit.value)
+      return
+    }
+
+    if (edit.kind === 'boolean') {
+      commitPropsField(key, null, edit.value)
+      return
+    }
+
+    if (edit.kind === 'number') {
+      const trimmed = edit.value.trim()
+      const parsed = Number(trimmed)
+
+      if (trimmed === '' || !Number.isFinite(parsed)) {
+        propFieldDrafts.value = { ...propFieldDrafts.value, [key]: edit.value }
+        propFieldErrors.value = {
+          ...propFieldErrors.value,
+          [key]: 'Enter a finite number.',
+        }
+        propsValidationResult.value = {
+          status: 'invalid',
+          message: 'Prop field value is invalid.',
+          issues: [{ path: key, message: 'Enter a finite number.' }],
+        }
+        return
+      }
+
+      commitPropsField(key, edit.value, parsed)
+      return
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(edit.value)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Invalid JSON.'
+      propFieldDrafts.value = { ...propFieldDrafts.value, [key]: edit.value }
+      propFieldErrors.value = { ...propFieldErrors.value, [key]: message }
+      propsValidationResult.value = {
+        status: 'invalid',
+        message: 'Prop field JSON could not be parsed.',
+        issues: [{ path: key, message }],
+      }
+      return
+    }
+
+    commitPropsField(key, edit.value, parsed)
   }
 
   function clearEventLog(): void {
@@ -574,6 +801,8 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     }
 
     currentProps.value = cloneProps(validation.props)
+    propFieldDrafts.value = {}
+    propFieldErrors.value = {}
   }
 
   async function copyPropsJson(): Promise<void> {
@@ -584,7 +813,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
       return
     }
 
-    await navigator.clipboard.writeText(propsJsonText.value)
+    await navigator.clipboard.writeText(formatPropsJson(currentProps.value))
   }
 
   async function copyCurrentUrl(): Promise<void> {
@@ -713,6 +942,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     editableViewport,
     customViewport,
     currentProps,
+    propFields,
     propsJsonText,
     propsJsonParseError,
     propsValidationResult,
@@ -722,6 +952,7 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     selectWrapper,
     selectViewport,
     setCustomViewportDimensions,
+    updatePropField,
     updatePropsJsonText,
     resetCurrentProps,
     copyPropsJson,

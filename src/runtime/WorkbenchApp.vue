@@ -84,11 +84,10 @@ const variantCount = computed(() =>
       <RightPanel
         :selected-case="workbenchState.selectedCase.value"
         :selected-variant="workbenchState.selectedVariant.value"
-        :props-json-text="workbenchState.propsJsonText.value"
-        :props-json-parse-error="workbenchState.propsJsonParseError.value"
+        :prop-fields="workbenchState.propFields.value"
         :validation-result="workbenchState.propsValidationResult.value"
         :event-log="workbenchState.eventLog.value"
-        @update:props-json-text="workbenchState.updatePropsJsonText"
+        @update:prop-field="workbenchState.updatePropField"
         @reset-props="workbenchState.resetCurrentProps"
         @copy-props="workbenchState.copyPropsJson"
         @clear-events="workbenchState.clearEventLog"

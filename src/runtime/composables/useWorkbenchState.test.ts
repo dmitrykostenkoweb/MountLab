@@ -8,12 +8,32 @@ import {
 } from './useWorkbenchState.js'
 
 const ComponentStub = {} as Component
+const ComponentWithRuntimeProps = {
+  props: {
+    name: { type: String, default: 'Trail Pack' },
+    category: { type: String, default: 'Equipment' },
+    price: { type: Number, default: 129 },
+    stock: { type: Number, default: 24 },
+    selected: { type: Boolean, default: false },
+    featured: Boolean,
+    tags: Array,
+    meta: Object,
+  },
+} as unknown as Component
 
 function componentCase(wrapper?: string): ComponentCase {
   return {
     id: 'button',
     component: ComponentStub,
     wrapper,
+    variants: [{ id: 'default', props: {} }],
+  }
+}
+
+function componentCaseWithRuntimeProps(): ComponentCase {
+  return {
+    id: 'product-card',
+    component: ComponentWithRuntimeProps,
     variants: [{ id: 'default', props: {} }],
   }
 }
@@ -25,6 +45,25 @@ function propsCase(schema?: unknown): ComponentCase {
     propsSchema: schema,
     variants: [{ id: 'default', props: { label: 'Save' } }],
     events: ['submit'],
+  }
+}
+
+function richPropsCase(schema?: unknown): ComponentCase {
+  return {
+    id: 'rich-form',
+    component: ComponentStub,
+    propsSchema: schema,
+    variants: [{
+      id: 'default',
+      props: {
+        label: 'Save',
+        count: 2,
+        enabled: true,
+        items: [{ id: 1 }],
+        options: { dense: false },
+        empty: null,
+      },
+    }],
   }
 }
 
@@ -355,6 +394,149 @@ describe('resolveWrapperSelection', () => {
     expect(state.propsValidationResult.value.status).toBe('valid')
   })
 
+  it('updates string, number, and boolean props through field edits', () => {
+    const state = useWorkbenchState([richPropsCase()], config({}, undefined))
+
+    state.updatePropField('label', { kind: 'string', value: 'Submit' })
+    state.updatePropField('count', { kind: 'number', value: '5' })
+    state.updatePropField('enabled', { kind: 'boolean', value: false })
+
+    expect(state.currentProps.value).toMatchObject({
+      label: 'Submit',
+      count: 5,
+      enabled: false,
+    })
+    expect(state.propFields.value.find(field => field.key === 'label')).toMatchObject({
+      kind: 'string',
+      draftText: 'Submit',
+      error: null,
+    })
+    expect(state.propFields.value.find(field => field.key === 'count')).toMatchObject({
+      kind: 'number',
+      draftText: '5',
+      error: null,
+    })
+    expect(state.propFields.value.find(field => field.key === 'enabled')).toMatchObject({
+      kind: 'boolean',
+      draftText: 'false',
+      error: null,
+    })
+  })
+
+  it('derives editable props from component runtime prop options when variant props are empty', () => {
+    const state = useWorkbenchState([componentCaseWithRuntimeProps()], config({}, undefined))
+
+    expect(state.currentProps.value).toEqual({
+      name: 'Trail Pack',
+      category: 'Equipment',
+      price: 129,
+      stock: 24,
+      selected: false,
+      featured: false,
+      tags: [],
+      meta: {},
+    })
+    expect(state.propFields.value.map(field => [field.key, field.kind])).toEqual([
+      ['name', 'string'],
+      ['category', 'string'],
+      ['price', 'number'],
+      ['stock', 'number'],
+      ['selected', 'boolean'],
+      ['featured', 'boolean'],
+      ['tags', 'json'],
+      ['meta', 'json'],
+    ])
+  })
+
+  it('updates object, array, and null props through field JSON edits', () => {
+    const state = useWorkbenchState([richPropsCase()], config({}, undefined))
+
+    state.updatePropField('items', { kind: 'json', value: '[{"id":2}]' })
+    state.updatePropField('options', { kind: 'json', value: '{"dense":true}' })
+    state.updatePropField('empty', { kind: 'json', value: '"filled"' })
+
+    expect(state.currentProps.value).toMatchObject({
+      items: [{ id: 2 }],
+      options: { dense: true },
+      empty: 'filled',
+    })
+    expect(state.propFields.value.find(field => field.key === 'items')).toMatchObject({
+      kind: 'json',
+      error: null,
+    })
+  })
+
+  it('keeps last valid props for invalid field JSON edits', () => {
+    const state = useWorkbenchState([richPropsCase()], config({}, undefined))
+
+    state.updatePropField('items', { kind: 'json', value: '[' })
+
+    expect(state.currentProps.value).toMatchObject({ items: [{ id: 1 }] })
+    expect(state.propsValidationResult.value.status).toBe('invalid')
+    expect(state.propsValidationResult.value.issues[0].path).toBe('items')
+    expect(state.propFields.value.find(field => field.key === 'items')).toMatchObject({
+      draftText: '[',
+      error: expect.any(String),
+    })
+  })
+
+  it('keeps last valid props for invalid number edits', () => {
+    const state = useWorkbenchState([richPropsCase()], config({}, undefined))
+
+    state.updatePropField('count', { kind: 'number', value: '' })
+
+    expect(state.currentProps.value).toMatchObject({ count: 2 })
+    expect(state.propsValidationResult.value.status).toBe('invalid')
+    expect(state.propFields.value.find(field => field.key === 'count')).toMatchObject({
+      draftText: '',
+      error: 'Enter a finite number.',
+    })
+  })
+
+  it('keeps last valid props when field edits fail schema validation', () => {
+    const schema = {
+      safeParse(value: unknown) {
+        if (Number((value as { count?: unknown }).count) <= 3) {
+          return { success: true, data: value }
+        }
+
+        return {
+          success: false,
+          error: {
+            issues: [{
+              path: ['count'],
+              message: 'Count is too high',
+            }],
+          },
+        }
+      },
+    }
+    const state = useWorkbenchState([richPropsCase(schema)], config({}, undefined))
+
+    state.updatePropField('count', { kind: 'number', value: '4' })
+
+    expect(state.currentProps.value).toMatchObject({ count: 2 })
+    expect(state.propsValidationResult.value.status).toBe('invalid')
+    expect(state.propFields.value.find(field => field.key === 'count')).toMatchObject({
+      draftText: '4',
+      error: 'Props did not pass validation.',
+    })
+  })
+
+  it('clears field errors and restores variant props on reset', () => {
+    const state = useWorkbenchState([richPropsCase()], config({}, undefined))
+
+    state.updatePropField('items', { kind: 'json', value: '[' })
+    state.resetCurrentProps()
+
+    expect(state.currentProps.value).toMatchObject({
+      label: 'Save',
+      count: 2,
+      items: [{ id: 1 }],
+    })
+    expect(state.propFields.value.every(field => field.error == null)).toBe(true)
+  })
+
   it('records, clears, and resets event log on case changes', () => {
     const state = useWorkbenchState(
       [
@@ -390,7 +572,20 @@ describe('resolveWrapperSelection', () => {
 
     await state.copyPropsJson()
 
-    expect(writeText).toHaveBeenCalledWith(state.propsJsonText.value)
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(state.currentProps.value, null, 2))
     expect(state.currentProps.value).toEqual({ label: 'Save' })
+  })
+
+  it('copies the complete current props object after field edits', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { clipboard: { writeText } })
+    const state = useWorkbenchState([richPropsCase()], config({}, undefined))
+
+    state.updatePropField('label', { kind: 'string', value: 'Submit' })
+
+    await state.copyPropsJson()
+
+    expect(writeText).toHaveBeenCalledWith(JSON.stringify(state.currentProps.value, null, 2))
+    expect(writeText).toHaveBeenCalledWith(expect.stringContaining('"label": "Submit"'))
   })
 })
