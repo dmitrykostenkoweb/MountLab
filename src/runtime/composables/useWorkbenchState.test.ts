@@ -38,21 +38,19 @@ function componentCaseWithRuntimeProps(): ComponentCase {
   }
 }
 
-function propsCase(schema?: unknown): ComponentCase {
+function propsCase(): ComponentCase {
   return {
     id: 'form',
     component: ComponentStub,
-    propsSchema: schema,
     variants: [{ id: 'default', props: { label: 'Save' } }],
     events: ['submit'],
   }
 }
 
-function richPropsCase(schema?: unknown): ComponentCase {
+function richPropsCase(): ComponentCase {
   return {
     id: 'rich-form',
     component: ComponentStub,
-    propsSchema: schema,
     variants: [{
       id: 'default',
       props: {
@@ -353,45 +351,6 @@ describe('resolveWrapperSelection', () => {
 
     expect(state.currentProps.value).toEqual({ label: 'Save' })
     expect(state.propsJsonParseError.value).toContain('Expected')
-    expect(state.propsValidationResult.value.status).toBe('invalid')
-  })
-
-  it('validates props through safeParse schemas', () => {
-    const schema = {
-      safeParse(value: unknown) {
-        if (['Save', 'OK'].includes(String((value as { label?: unknown }).label))) {
-          return { success: true, data: value }
-        }
-
-        return {
-          success: false,
-          error: {
-            issues: [{
-              path: ['label'],
-              message: 'Expected OK',
-              expected: 'OK',
-              received: 'other',
-            }],
-          },
-        }
-      },
-    }
-    const state = useWorkbenchState([propsCase(schema)], config({}, undefined))
-
-    state.updatePropsJsonText(JSON.stringify({ label: 'Bad' }))
-
-    expect(state.currentProps.value).toEqual({ label: 'Save' })
-    expect(state.propsValidationResult.value.status).toBe('invalid')
-    expect(state.propsValidationResult.value.issues[0]).toMatchObject({
-      path: 'label',
-      expected: 'OK',
-      received: 'other',
-    })
-
-    state.updatePropsJsonText(JSON.stringify({ label: 'OK' }))
-
-    expect(state.currentProps.value).toEqual({ label: 'OK' })
-    expect(state.propsValidationResult.value.status).toBe('valid')
   })
 
   it('updates string, number, and boolean props through field edits', () => {
@@ -472,8 +431,6 @@ describe('resolveWrapperSelection', () => {
     state.updatePropField('items', { kind: 'json', value: '[' })
 
     expect(state.currentProps.value).toMatchObject({ items: [{ id: 1 }] })
-    expect(state.propsValidationResult.value.status).toBe('invalid')
-    expect(state.propsValidationResult.value.issues[0].path).toBe('items')
     expect(state.propFields.value.find(field => field.key === 'items')).toMatchObject({
       draftText: '[',
       error: expect.any(String),
@@ -486,40 +443,9 @@ describe('resolveWrapperSelection', () => {
     state.updatePropField('count', { kind: 'number', value: '' })
 
     expect(state.currentProps.value).toMatchObject({ count: 2 })
-    expect(state.propsValidationResult.value.status).toBe('invalid')
     expect(state.propFields.value.find(field => field.key === 'count')).toMatchObject({
       draftText: '',
       error: 'Enter a finite number.',
-    })
-  })
-
-  it('keeps last valid props when field edits fail schema validation', () => {
-    const schema = {
-      safeParse(value: unknown) {
-        if (Number((value as { count?: unknown }).count) <= 3) {
-          return { success: true, data: value }
-        }
-
-        return {
-          success: false,
-          error: {
-            issues: [{
-              path: ['count'],
-              message: 'Count is too high',
-            }],
-          },
-        }
-      },
-    }
-    const state = useWorkbenchState([richPropsCase(schema)], config({}, undefined))
-
-    state.updatePropField('count', { kind: 'number', value: '4' })
-
-    expect(state.currentProps.value).toMatchObject({ count: 2 })
-    expect(state.propsValidationResult.value.status).toBe('invalid')
-    expect(state.propFields.value.find(field => field.key === 'count')).toMatchObject({
-      draftText: '4',
-      error: 'Props did not pass validation.',
     })
   })
 

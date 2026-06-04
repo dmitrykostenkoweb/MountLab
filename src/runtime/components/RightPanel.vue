@@ -5,16 +5,14 @@ import type {
   EventLogEntry,
   PropEditorField,
   PropFieldEdit,
-  PropsValidationResult,
 } from '../composables/useWorkbenchState.js'
 
-type TabId = 'props' | 'validation' | 'events' | 'notes'
+type TabId = 'props' | 'events' | 'notes'
 
 const props = defineProps<{
   selectedCase: ComponentCase | null
   selectedVariant: ComponentVariant | null
   propFields: PropEditorField[]
-  validationResult: PropsValidationResult
   eventLog: EventLogEntry[]
 }>()
 
@@ -26,11 +24,6 @@ const emit = defineEmits<{
 }>()
 
 const activeTab = ref<TabId>('props')
-
-const validationBadge = computed(() => {
-  if (props.validationResult.status === 'invalid') return '!'
-  return null
-})
 
 const eventsBadge = computed(() =>
   props.eventLog.length > 0 ? props.eventLog.length : null,
@@ -71,7 +64,6 @@ function formatPayload(payload: unknown): string {
       <button
         v-for="tab in [
           { id: 'props', label: 'Props' },
-          { id: 'validation', label: 'Validation', badge: validationBadge },
           { id: 'events', label: 'Events', badge: eventsBadge },
           { id: 'notes', label: 'Notes' },
         ] as { id: TabId; label: string; badge?: string | number | null }[]"
@@ -216,106 +208,6 @@ function formatPayload(payload: unknown): string {
           No props for this variant.
         </p>
 
-        <!-- Inline validation status in Props tab -->
-        <div
-          v-if="validationResult.status !== 'unavailable'"
-          class="ml-panel__validation-inline"
-          :class="{
-            'ml-panel__validation-inline--valid':
-              validationResult.status === 'valid',
-            'ml-panel__validation-inline--error':
-              validationResult.status === 'invalid',
-          }"
-        >
-          <svg
-            v-if="validationResult.status === 'valid'"
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="3"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M20 6L9 17l-5-5" />
-          </svg>
-          <svg
-            v-else
-            width="11"
-            height="11"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2.4"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
-          >
-            <circle cx="12" cy="12" r="10" />
-            <path d="M12 8v4M12 16h.01" />
-          </svg>
-          {{ validationResult.message }}
-        </div>
-      </div>
-
-      <!-- Validation tab -->
-      <div
-        v-show="activeTab === 'validation'"
-        class="ml-panel__section"
-        role="tabpanel"
-      >
-        <h2 class="ml-panel__title">Validation</h2>
-
-        <p
-          class="ml-panel__message"
-          :class="{
-            'ml-panel__message--success': validationResult.status === 'valid',
-            'ml-panel__message--error': validationResult.status === 'invalid',
-          }"
-        >
-          {{ validationResult.message }}
-        </p>
-
-        <ul v-if="validationResult.issues.length > 0" class="ml-panel__issues">
-          <li
-            v-for="(issue, index) in validationResult.issues"
-            :key="`${issue.path}:${index}`"
-            class="ml-panel__issue"
-          >
-            <span v-if="issue.path" class="ml-panel__issue-path">{{
-              issue.path
-            }}</span>
-            <span>{{ issue.message }}</span>
-            <span
-              v-if="issue.expected || issue.received"
-              class="ml-panel__issue-meta"
-            >
-              <template v-if="issue.expected"
-                >expected {{ issue.expected }}</template
-              >
-              <template v-if="issue.expected && issue.received">, </template>
-              <template v-if="issue.received"
-                >received {{ issue.received }}</template
-              >
-            </span>
-          </li>
-        </ul>
-
-        <p
-          v-else-if="validationResult.status === 'valid'"
-          class="ml-panel__muted"
-        >
-          All props match the schema.
-        </p>
-
-        <p
-          v-else-if="validationResult.status === 'unavailable'"
-          class="ml-panel__muted"
-        >
-          No schema configured for this component.
-        </p>
       </div>
 
       <!-- Events tab -->
@@ -694,32 +586,6 @@ function formatPayload(payload: unknown): string {
   line-height: 1.35;
 }
 
-/* Inline validation */
-
-.ml-panel__validation-inline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  font-weight: 500;
-  padding: 6px 10px;
-  border-radius: 5px;
-  border: 1px solid transparent;
-  margin-top: 8px;
-}
-
-.ml-panel__validation-inline--valid {
-  color: var(--ml-success);
-  background: var(--ml-success-bg);
-  border-color: var(--ml-success-border);
-}
-
-.ml-panel__validation-inline--error {
-  color: var(--ml-error);
-  background: var(--ml-error-bg);
-  border-color: var(--ml-error-border);
-}
-
 /* Messages */
 
 .ml-panel__message {
@@ -746,36 +612,6 @@ function formatPayload(payload: unknown): string {
 
 .ml-panel__muted--top {
   margin-top: 10px;
-}
-
-/* Validation issues */
-
-.ml-panel__issues {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin: 10px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ml-panel__issue {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px;
-  border: 1px solid var(--ml-error-border);
-  border-radius: 6px;
-  background: var(--ml-error-bg);
-  color: var(--ml-error);
-  font-size: 11.5px;
-}
-
-.ml-panel__issue-path,
-.ml-panel__issue-meta {
-  font-family: var(--ml-font-mono);
-  font-size: 11px;
-  opacity: 0.8;
 }
 
 /* Event chips */

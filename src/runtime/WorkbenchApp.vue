@@ -85,7 +85,6 @@ const variantCount = computed(() =>
         :selected-case="workbenchState.selectedCase.value"
         :selected-variant="workbenchState.selectedVariant.value"
         :prop-fields="workbenchState.propFields.value"
-        :validation-result="workbenchState.propsValidationResult.value"
         :event-log="workbenchState.eventLog.value"
         @update:prop-field="workbenchState.updatePropField"
         @reset-props="workbenchState.resetCurrentProps"

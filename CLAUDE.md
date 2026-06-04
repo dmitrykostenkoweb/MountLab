@@ -31,7 +31,7 @@ MountLab is a component workbench for Vue 3 + Vite. It lets developers mount and
 
 The Vite plugin exposes two virtual modules consumed by the runtime:
 
-- `virtual:mountlab/cases` — auto-discovered + validated `.case.ts` files
+- `virtual:mountlab/cases` — auto-discovered `.case.ts` files
 - `virtual:mountlab/config` — user's `mountlab.config.ts`
 
 The workbench is injected via `/__mountlab/entry.js`.
@@ -43,7 +43,7 @@ The workbench is injected via `/__mountlab/entry.js`.
 - **Sidebar** — component/case tree selector
 - **TopBar** — variant switcher, viewport selector
 - **PreviewArea** — live component preview + event logger overlay
-- **RightPanel** — JSON props editor with schema validation, event log
+- **RightPanel** — JSON props editor, event log, notes
 
 State is managed in `src/runtime/composables/useWorkbenchState.ts` and synced to the URL.
 
@@ -71,7 +71,7 @@ Two utility modules keep component files thin:
 
 ### Case files
 
-Users create `.case.ts` files alongside their components using `defineComponentCase()`. The CLI `add` command scaffolds these. The Vite plugin discovers them via fast-glob and validates their shape at dev-server startup.
+Users create `.case.ts` files alongside their components using `defineComponentCase()`. The CLI `add` command scaffolds these. The Vite plugin discovers them via fast-glob at dev-server startup.
 
 ## Local example app
 

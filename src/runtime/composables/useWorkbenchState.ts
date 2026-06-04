@@ -37,18 +37,6 @@ export type PropFieldEdit =
   | { kind: 'boolean'; value: boolean }
   | { kind: 'json'; value: string }
 
-export interface ValidationIssue {
-  path: string
-  message: string
-  expected?: string
-  received?: string
-}
-
-export type PropsValidationResult =
-  | { status: 'unavailable'; message: string; issues: ValidationIssue[] }
-  | { status: 'valid'; message: string; issues: ValidationIssue[] }
-  | { status: 'invalid'; message: string; issues: ValidationIssue[] }
-
 export interface EventLogEntry {
   id: number
   name: string
@@ -67,10 +55,6 @@ export interface ViewportOption {
   key: string
   title: string
   viewport: Viewport | null
-}
-
-interface SafeParseSchema {
-  safeParse: (value: unknown) => unknown
 }
 
 const CUSTOM_VIEWPORT_KEY = 'custom'
@@ -232,15 +216,6 @@ function getPropFieldKind(value: unknown): PropFieldKind {
   return 'json'
 }
 
-function hasSafeParse(schema: unknown): schema is SafeParseSchema {
-  return (
-    schema != null
-    && typeof schema === 'object'
-    && 'safeParse' in schema
-    && typeof (schema as { safeParse?: unknown }).safeParse === 'function'
-  )
-}
-
 function stringifyUnknown(value: unknown): string {
   if (typeof value === 'string') return value
   if (value == null) return ''
@@ -248,135 +223,6 @@ function stringifyUnknown(value: unknown): string {
     return JSON.stringify(value)
   } catch {
     return String(value)
-  }
-}
-
-function formatIssuePath(path: unknown): string {
-  if (!Array.isArray(path)) {
-    return stringifyUnknown(path)
-  }
-
-  return path.map(String).join('.')
-}
-
-function normalizeIssue(issue: unknown): ValidationIssue {
-  const issueRecord = issue as {
-    path?: unknown
-    message?: unknown
-    expected?: unknown
-    received?: unknown
-  } | null
-
-  return {
-    path: formatIssuePath(issueRecord?.path),
-    message: stringifyUnknown(issueRecord?.message) || 'Props did not pass validation.',
-    expected: issueRecord?.expected == null ? undefined : stringifyUnknown(issueRecord.expected),
-    received: issueRecord?.received == null ? undefined : stringifyUnknown(issueRecord.received),
-  }
-}
-
-function normalizeIssues(error: unknown): ValidationIssue[] {
-  const candidateIssues = (error as { issues?: unknown; errors?: unknown } | null)?.issues
-    ?? (error as { errors?: unknown } | null)?.errors
-
-  if (!Array.isArray(candidateIssues)) {
-    return [{
-      path: '',
-      message: stringifyUnknown((error as { message?: unknown } | null)?.message) || 'Props did not pass validation.',
-    }]
-  }
-
-  return candidateIssues.map(normalizeIssue)
-}
-
-function unavailableValidation(): PropsValidationResult {
-  return {
-    status: 'unavailable',
-    message: 'Schema validation is not configured.',
-    issues: [],
-  }
-}
-
-function validateProps(
-  props: PropsRecord,
-  schema: unknown,
-): { ok: true; props: PropsRecord; result: PropsValidationResult } | { ok: false; result: PropsValidationResult } {
-  if (!hasSafeParse(schema)) {
-    return {
-      ok: true,
-      props,
-      result: unavailableValidation(),
-    }
-  }
-
-  let parsedResult: unknown
-  try {
-    parsedResult = schema.safeParse(props)
-  } catch (err) {
-    return {
-      ok: false,
-      result: {
-        status: 'invalid',
-        message: err instanceof Error ? err.message : 'Props did not pass validation.',
-        issues: normalizeIssues(err),
-      },
-    }
-  }
-
-  if (parsedResult == null || typeof parsedResult !== 'object') {
-    return {
-      ok: false,
-      result: {
-        status: 'invalid',
-        message: 'Props validation returned an unsupported result.',
-        issues: [{ path: '', message: 'Props validation returned an unsupported result.' }],
-      },
-    }
-  }
-
-  const resultRecord = parsedResult as { success?: unknown; data?: unknown; error?: unknown }
-
-  if (resultRecord.success === true) {
-    if (!isPropsRecord(resultRecord.data)) {
-      return {
-        ok: false,
-        result: {
-          status: 'invalid',
-          message: 'Validated props must be a JSON object.',
-          issues: [{ path: '', message: 'Validated props must be a JSON object.' }],
-        },
-      }
-    }
-
-    return {
-      ok: true,
-      props: resultRecord.data,
-      result: {
-        status: 'valid',
-        message: 'Props match the configured schema.',
-        issues: [],
-      },
-    }
-  }
-
-  if (resultRecord.success !== false) {
-    return {
-      ok: false,
-      result: {
-        status: 'invalid',
-        message: 'Props validation returned an unsupported result.',
-        issues: [{ path: '', message: 'Props validation returned an unsupported result.' }],
-      },
-    }
-  }
-
-  return {
-    ok: false,
-    result: {
-      status: 'invalid',
-      message: 'Props did not pass validation.',
-      issues: normalizeIssues(resultRecord.error),
-    },
   }
 }
 
@@ -570,7 +416,6 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
   const propsJsonParseError = ref<string | null>(null)
   const propFieldDrafts = ref<Record<string, string>>({})
   const propFieldErrors = ref<Record<string, string>>({})
-  const propsValidationResult = ref<PropsValidationResult>(unavailableValidation())
   const eventLog = ref<EventLogEntry[]>([])
   const wrapperResolution = ref<WrapperResolution>({
     requestedKey: null,
@@ -663,46 +508,23 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     const nextProps = hasOwnKeys(variantProps)
       ? variantProps
       : derivePropsFromComponent(selectedCase.value?.component)
-    propsJsonText.value = formatPropsJson(nextProps)
+    currentProps.value = cloneProps(nextProps)
+    propsJsonText.value = formatPropsJson(currentProps.value)
     propsJsonParseError.value = null
     propFieldDrafts.value = {}
     propFieldErrors.value = {}
-    const validation = validateProps(nextProps, selectedCase.value?.propsSchema)
-    propsValidationResult.value = validation.result
-    if (validation.ok) {
-      currentProps.value = cloneProps(validation.props)
-      propsJsonText.value = formatPropsJson(currentProps.value)
-    }
   }
 
-  function commitPropsField(
-    key: string,
-    rawDraft: string | null,
-    nextValue: unknown,
-  ): void {
+  function commitPropsField(key: string, nextValue: unknown): void {
     const nextProps = cloneProps(currentProps.value)
     nextProps[key] = nextValue
-
-    const validation = validateProps(nextProps, selectedCase.value?.propsSchema)
-    propsValidationResult.value = validation.result
-
-    if (!validation.ok) {
-      propFieldDrafts.value = rawDraft == null
-        ? propFieldDrafts.value
-        : { ...propFieldDrafts.value, [key]: rawDraft }
-      propFieldErrors.value = {
-        ...propFieldErrors.value,
-        [key]: validation.result.message,
-      }
-      return
-    }
 
     const nextDrafts = { ...propFieldDrafts.value }
     const nextErrors = { ...propFieldErrors.value }
     delete nextDrafts[key]
     delete nextErrors[key]
 
-    currentProps.value = cloneProps(validation.props)
+    currentProps.value = cloneProps(nextProps)
     propsJsonText.value = formatPropsJson(currentProps.value)
     propsJsonParseError.value = null
     propFieldDrafts.value = nextDrafts
@@ -713,12 +535,12 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     if (!Object.prototype.hasOwnProperty.call(currentProps.value, key)) return
 
     if (edit.kind === 'string') {
-      commitPropsField(key, edit.value, edit.value)
+      commitPropsField(key, edit.value)
       return
     }
 
     if (edit.kind === 'boolean') {
-      commitPropsField(key, null, edit.value)
+      commitPropsField(key, edit.value)
       return
     }
 
@@ -732,15 +554,10 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
           ...propFieldErrors.value,
           [key]: 'Enter a finite number.',
         }
-        propsValidationResult.value = {
-          status: 'invalid',
-          message: 'Prop field value is invalid.',
-          issues: [{ path: key, message: 'Enter a finite number.' }],
-        }
         return
       }
 
-      commitPropsField(key, edit.value, parsed)
+      commitPropsField(key, parsed)
       return
     }
 
@@ -751,15 +568,10 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
       const message = err instanceof Error ? err.message : 'Invalid JSON.'
       propFieldDrafts.value = { ...propFieldDrafts.value, [key]: edit.value }
       propFieldErrors.value = { ...propFieldErrors.value, [key]: message }
-      propsValidationResult.value = {
-        status: 'invalid',
-        message: 'Prop field JSON could not be parsed.',
-        issues: [{ path: key, message }],
-      }
       return
     }
 
-    commitPropsField(key, edit.value, parsed)
+    commitPropsField(key, parsed)
   }
 
   function clearEventLog(): void {
@@ -775,32 +587,15 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
       parsed = JSON.parse(value)
     } catch (err) {
       propsJsonParseError.value = err instanceof Error ? err.message : 'Invalid JSON.'
-      propsValidationResult.value = {
-        status: 'invalid',
-        message: 'Props JSON could not be parsed.',
-        issues: [{ path: '', message: propsJsonParseError.value }],
-      }
       return
     }
 
     if (!isPropsRecord(parsed)) {
       propsJsonParseError.value = 'Props JSON must be an object.'
-      propsValidationResult.value = {
-        status: 'invalid',
-        message: 'Props JSON must be an object.',
-        issues: [{ path: '', message: 'Props JSON must be an object.' }],
-      }
       return
     }
 
-    const validation = validateProps(parsed, selectedCase.value?.propsSchema)
-    propsValidationResult.value = validation.result
-
-    if (!validation.ok) {
-      return
-    }
-
-    currentProps.value = cloneProps(validation.props)
+    currentProps.value = cloneProps(parsed)
     propFieldDrafts.value = {}
     propFieldErrors.value = {}
   }
@@ -945,7 +740,6 @@ export function useWorkbenchState(cases: ComponentCase[], config: MountLabConfig
     propFields,
     propsJsonText,
     propsJsonParseError,
-    propsValidationResult,
     eventLog,
     selectCase,
     selectVariant,

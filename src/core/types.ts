@@ -59,12 +59,6 @@ export interface ComponentCase<TProps = Record<string, unknown>> {
   /** Key of the wrapper to use. Falls back to `defaultWrapper`. */
   wrapper?: string
 
-  /**
-   * Optional Zod/Valibot schema for runtime props validation.
-   * MountLab validates the props editor JSON against this schema.
-   */
-  propsSchema?: unknown
-
   variants: ComponentVariant<TProps>[]
 
   /**

@@ -26,7 +26,7 @@ ProductCard.vue
 ProductCard.case.ts
 ```
 
-W `ProductCard.case.ts` developer definiuje komponent, warianty, propsy, wrapper, opcjonalną walidację i eventy.
+W `ProductCard.case.ts` developer definiuje komponent, warianty, propsy, wrapper i eventy.
 
 MountLab startuje na osobnym porcie, np. `http://localhost:4300`, ale działa z poziomu projektu użytkownika, dzięki czemu komponenty mają dostęp do tych samych zależności i konfiguracji co normalna aplikacja.
 
@@ -51,8 +51,7 @@ MountLab to:
 - lokalny preview server,
 - system component cases/variants,
 - narzędzie do szybkiego testowania propsów i stanów komponentu,
-- wrapper-based preview environment,
-- runtime props validation layer.
+- wrapper-based preview environment.
 
 ### 2.4. Czym MountLab nie jest
 
@@ -125,7 +124,6 @@ Frontend developer pracujący w dużej aplikacji Vue 3 + Vite, który często bu
 - Umożliwić szybkie definiowanie wariantów danych.
 - Umożliwić wybór wrappera dla komponentu.
 - Umożliwić edycję propsów przez JSON input.
-- Umożliwić runtime validation propsów przez Zod schema.
 - Zapewnić prosty CLI flow: `init`, `add`, `dev`.
 - Umożliwić auto-discovery plików `*.case.ts`.
 
@@ -171,7 +169,6 @@ Przykład struktury:
 src/components/product-card/
   ProductCard.vue
   ProductCard.case.ts
-  ProductCard.schema.ts
 ```
 
 Przykład case:
@@ -179,7 +176,6 @@ Przykład case:
 ```ts
 import { defineComponentCase } from "@mountlab/vue";
 import ProductCard from "./ProductCard.vue";
-import { productCardPropsSchema } from "./ProductCard.schema";
 
 export default defineComponentCase({
   id: "product-card",
@@ -188,8 +184,6 @@ export default defineComponentCase({
 
   component: ProductCard,
   wrapper: "default",
-
-  propsSchema: productCardPropsSchema,
 
   variants: [
     {
@@ -556,65 +550,17 @@ Required behavior:
 - Let developer edit props manually.
 - Parse JSON.
 - Show JSON parse errors.
-- If schema exists, validate parsed props.
-- If valid, re-render component with edited props.
-- If invalid, show validation errors and do not crash preview.
+- Re-render component with edited props.
 
 Acceptance criteria:
 
 - Invalid JSON does not crash app.
-- Schema validation errors are readable.
 - Developer can reset props to selected variant.
 - Developer can copy current props.
 
 ---
 
-## 13. Runtime validation
-
-TypeScript types disappear at runtime. Therefore MountLab should not promise automatic runtime validation from TypeScript types in MVP.
-
-MVP validation model:
-
-- User may provide `propsSchema`.
-- `propsSchema` must be a Zod schema in MVP. Valibot support is planned for v0.3.
-- MountLab validates edited props against schema.
-
-Example with Zod:
-
-```ts
-import { z } from "zod";
-
-export const productCardPropsSchema = z.object({
-  product: z.object({
-    id: z.string(),
-    name: z.string(),
-    quantity: z.number(),
-  }),
-  selected: z.boolean().optional(),
-});
-```
-
-Usage:
-
-```ts
-export default defineComponentCase({
-  id: 'product-card',
-  component: ProductCard,
-  propsSchema: productCardPropsSchema,
-  variants: [...],
-})
-```
-
-Acceptance criteria:
-
-- Zod schema validation works.
-- Validation errors include path, expected type and received value if available.
-- Schema is optional.
-- If no schema exists, JSON editor still works.
-
----
-
-## 14. Event logger
+## 13. Event logger
 
 Component events should be observable in UI.
 
@@ -873,7 +819,6 @@ export interface ComponentCase<TProps = Record<string, unknown>> {
   group?: string;
   component: Component;
   wrapper?: string;
-  propsSchema?: unknown;
   variants: ComponentVariant<TProps>[];
   events?: string[];
   notes?: string;
@@ -1225,17 +1170,7 @@ Deliverables:
 - parse errors,
 - reset to variant.
 
-### Phase 8: Validation
-
-Implement Zod validation adapter.
-
-Deliverables:
-
-- optional `propsSchema`,
-- validation result panel,
-- readable error paths.
-
-### Phase 9: Event logger
+### Phase 8: Event logger
 
 Implement event binding/logging.
 

@@ -1,24 +1,27 @@
 <script setup lang="ts">
-const props = withDefaults(defineProps<{
-  name?: string
-  category?: string
-  price?: number
-  stock?: number
-  selected?: boolean
-  featured?: boolean
-}>(), {
-  name: 'Trail Pack',
-  category: 'Equipment',
-  price: 129,
-  stock: 24,
-  selected: false,
-  featured: false,
-})
+const props = withDefaults(
+  defineProps<{
+    name?: string;
+    category?: string;
+    price?: number;
+    stock?: number;
+    selected?: boolean;
+    featured?: boolean;
+  }>(),
+  {
+    name: "Trail Pack",
+    category: "Equipment",
+    price: 129,
+    stock: 24,
+    selected: false,
+    featured: false,
+  },
+);
 
 const emit = defineEmits<{
-  select: [payload: { name: string, selected: boolean }]
-  restock: [payload: { name: string, amount: number }]
-}>()
+  select: [payload: { name: string; selected: boolean }];
+  restock: [payload: { name: string; amount: number }];
+}>();
 </script>
 
 <template>
@@ -38,10 +41,17 @@ const emit = defineEmits<{
         </span>
       </div>
       <div class="product-card__actions">
-        <button type="button" @click="emit('select', { name, selected: !props.selected })">
-          {{ selected ? 'Selected' : 'Select' }}
+        <button
+          type="button"
+          @click="emit('select', { name, selected: !props.selected })"
+        >
+          {{ selected ? "Selected" : "Select" }}
         </button>
-        <button type="button" class="product-card__secondary" @click="emit('restock', { name, amount: 5 })">
+        <button
+          type="button"
+          class="product-card__secondary"
+          @click="emit('restock', { name, amount: 5 })"
+        >
           Restock
         </button>
       </div>
@@ -60,8 +70,10 @@ const emit = defineEmits<{
 }
 
 .product-card--selected {
-  border-color: #2563eb;
-  box-shadow: 0 0 0 3px rgb(37 99 235 / 0.15), 0 18px 40px rgb(31 41 55 / 0.1);
+  border-color: red !important;
+  box-shadow:
+    0 0 0 3px rgb(37 99 235 / 0.15),
+    0 18px 40px rgb(31 41 55 / 0.1);
 }
 
 .product-card__media {
