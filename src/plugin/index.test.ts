@@ -76,6 +76,67 @@ describe('mountlab vite plugin', () => {
     expect(code).toContain("variants: [{ id: 'default', title: 'Default', props: {} }]")
   })
 
+  it('infers synthetic case events from array defineEmits declarations', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
+    mkdirSync(path.join(root, 'src', 'components'), { recursive: true })
+    writeFileSync(
+      path.join(root, 'src', 'components', 'ProductCard.vue'),
+      `<script setup lang="ts">
+const emit = defineEmits(['select', 'restock'])
+</script>
+<template />`,
+    )
+
+    const plugin = mountlab(configWithComponentDiscovery)
+    resolveConfig(plugin, root)
+    const code = String(await pluginLoad(plugin, '\0mountlab:cases'))
+
+    expect(code).toContain('events: ["select","restock"]')
+  })
+
+  it('infers synthetic case events from type literal defineEmits declarations', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
+    mkdirSync(path.join(root, 'src', 'components'), { recursive: true })
+    writeFileSync(
+      path.join(root, 'src', 'components', 'ProductCard.vue'),
+      `<script setup lang="ts">
+const emit = defineEmits<{
+  select: [payload: { id: string }]
+  'update:modelValue': [value: string]
+  (event: 'restock', amount: number): void
+}>()
+</script>
+<template />`,
+    )
+
+    const plugin = mountlab(configWithComponentDiscovery)
+    resolveConfig(plugin, root)
+    const code = String(await pluginLoad(plugin, '\0mountlab:cases'))
+
+    expect(code).toContain('events: ["select","update:modelValue","restock"]')
+  })
+
+  it('keeps synthetic discovery working when defineEmits cannot be inferred', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
+    mkdirSync(path.join(root, 'src', 'components'), { recursive: true })
+    writeFileSync(
+      path.join(root, 'src', 'components', 'ProductCard.vue'),
+      `<script setup lang="ts">
+const events = ['select']
+const emit = defineEmits(events)
+</script>
+<template />`,
+    )
+
+    const plugin = mountlab(configWithComponentDiscovery)
+    resolveConfig(plugin, root)
+    const code = String(await pluginLoad(plugin, '\0mountlab:cases'))
+
+    expect(code).toContain('src/components/ProductCard.vue')
+    expect(code).toContain('id: "product-card"')
+    expect(code).not.toContain('events:')
+  })
+
   it('does not discover raw Vue components when component discovery is omitted', async () => {
     const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
     mkdirSync(path.join(root, 'src', 'components'), { recursive: true })
@@ -109,6 +170,30 @@ describe('mountlab vite plugin', () => {
     expect(code).not.toContain('src/components/ProductCard.vue')
     expect(code).not.toContain('src/components/product-card/index.vue')
     expect(code).not.toContain('component: component0')
+  })
+
+  it('does not merge inferred events into authored sidecar cases', async () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'mountlab-plugin-'))
+    mkdirSync(path.join(root, 'src', 'components'), { recursive: true })
+    writeFileSync(
+      path.join(root, 'src', 'components', 'ProductCard.vue'),
+      `<script setup lang="ts">
+defineEmits(['select'])
+</script>
+<template />`,
+    )
+    writeFileSync(path.join(root, 'src', 'components', 'ProductCard.case.ts'), 'export default {}')
+
+    const plugin = mountlab({
+      cases: ['src/**/*.case.ts'],
+      components: ['src/components/**/*.vue'],
+    })
+    resolveConfig(plugin, root)
+    const code = String(await pluginLoad(plugin, '\0mountlab:cases'))
+
+    expect(code).toContain('src/components/ProductCard.case.ts')
+    expect(code).not.toContain('src/components/ProductCard.vue')
+    expect(code).not.toContain('events:')
   })
 
   it('uses deterministic ordering after merging authored and synthetic cases', async () => {

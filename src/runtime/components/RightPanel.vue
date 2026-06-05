@@ -6,6 +6,7 @@ import type {
   PropEditorField,
   PropFieldEdit,
 } from '../composables/useWorkbenchState.js'
+import { getEventsEmptyState } from './rightPanelEvents.js'
 
 type TabId = 'props' | 'events' | 'notes'
 
@@ -237,7 +238,9 @@ function formatPayload(payload: unknown): string {
             {{ eventName }}
           </span>
         </div>
-        <p v-else class="ml-panel__muted">No events configured.</p>
+        <p v-else class="ml-panel__muted">
+          {{ getEventsEmptyState(selectedCase) }}
+        </p>
 
         <ol v-if="eventLog.length > 0" class="ml-panel__event-log">
           <li
@@ -258,7 +261,7 @@ function formatPayload(payload: unknown): string {
           v-else-if="selectedCase?.events?.length"
           class="ml-panel__muted ml-panel__muted--top"
         >
-          No events recorded yet.
+          {{ getEventsEmptyState(selectedCase) }}
         </p>
       </div>
 

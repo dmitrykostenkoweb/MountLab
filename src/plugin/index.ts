@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { readFileSync } from 'node:fs'
 import fg from 'fast-glob'
 import type { Plugin, ViteDevServer } from 'vite'
 import type { MountLabConfig } from '../core/types.js'
@@ -81,6 +82,7 @@ interface SyntheticCaseRegistryEntry {
   importName: string
   id: string
   title: string
+  events: string[]
 }
 
 type CaseRegistryEntry = AuthoredCaseRegistryEntry | SyntheticCaseRegistryEntry
@@ -106,6 +108,7 @@ function resolveCaseRegistryEntries(
         importName: `component${index}`,
         id: toKebabCase(stem),
         title: toTitle(stem),
+        events: inferComponentEvents(filePath),
       }
     })
 
@@ -113,6 +116,191 @@ function resolveCaseRegistryEntries(
     .sort((a, b) =>
       formatDiagnosticPath(a.filePath, root).localeCompare(formatDiagnosticPath(b.filePath, root)),
     )
+}
+
+function findMatchingDelimiter(source: string, openIndex: number, open: string, close: string): number {
+  let depth = 0
+  let quote: string | null = null
+  let escaped = false
+
+  for (let index = openIndex; index < source.length; index++) {
+    const char = source[index]
+
+    if (quote) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char
+      continue
+    }
+
+    if (char === open) depth++
+    if (char === close) depth--
+    if (depth === 0) return index
+  }
+
+  return -1
+}
+
+function splitTopLevelMembers(source: string): string[] {
+  const members: string[] = []
+  let start = 0
+  let parenDepth = 0
+  let bracketDepth = 0
+  let braceDepth = 0
+  let angleDepth = 0
+  let quote: string | null = null
+  let escaped = false
+
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index]
+
+    if (quote) {
+      if (escaped) {
+        escaped = false
+      } else if (char === '\\') {
+        escaped = true
+      } else if (char === quote) {
+        quote = null
+      }
+      continue
+    }
+
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char
+      continue
+    }
+
+    if (char === '(') parenDepth++
+    else if (char === ')') parenDepth--
+    else if (char === '[') bracketDepth++
+    else if (char === ']') bracketDepth--
+    else if (char === '{') braceDepth++
+    else if (char === '}') braceDepth--
+    else if (char === '<') angleDepth++
+    else if (char === '>') angleDepth--
+
+    if (
+      (char === ';' || char === ',' || char === '\n')
+      && parenDepth === 0
+      && bracketDepth === 0
+      && braceDepth === 0
+      && angleDepth === 0
+    ) {
+      members.push(source.slice(start, index).trim())
+      start = index + 1
+    }
+  }
+
+  const trailing = source.slice(start).trim()
+  if (trailing) members.push(trailing)
+  return members
+}
+
+function extractStringLiteralArray(source: string): string[] {
+  const arrayEnd = findMatchingDelimiter(source, 0, '[', ']')
+  if (arrayEnd !== source.length - 1) return []
+
+  const events: string[] = []
+  for (const member of splitTopLevelMembers(source.slice(1, -1))) {
+    const literal = member.match(/^(['"])((?:\\.|(?!\1).)*)\1$/s)
+    if (!literal) return []
+    events.push(literal[2].replace(/\\(['"\\])/g, '$1'))
+  }
+
+  return events
+}
+
+function extractTypeEvents(typeArgument: string): string[] {
+  const events = new Set<string>()
+  const trimmed = typeArgument.trim()
+  const objectBody = trimmed.startsWith('{') && trimmed.endsWith('}')
+    ? trimmed.slice(1, -1)
+    : trimmed
+
+  for (const member of splitTopLevelMembers(objectBody)) {
+    const callSignature = member.match(/^\(\s*[^:),]+\s*:\s*(['"])((?:\\.|(?!\1).)*)\1/s)
+    if (callSignature) {
+      events.add(callSignature[2].replace(/\\(['"\\])/g, '$1'))
+      continue
+    }
+
+    const quotedKey = member.match(/^(['"])((?:\\.|(?!\1).)*)\1\s*\??\s*:/s)
+    if (quotedKey) {
+      events.add(quotedKey[2].replace(/\\(['"\\])/g, '$1'))
+      continue
+    }
+
+    const bareKey = member.match(/^([A-Za-z_$][\w$]*)\s*\??\s*:/)
+    if (bareKey) events.add(bareKey[1])
+  }
+
+  return [...events]
+}
+
+function extractDefineEmitsEvents(source: string): string[] {
+  const events = new Set<string>()
+  let searchFrom = 0
+
+  while (searchFrom < source.length) {
+    const callIndex = source.indexOf('defineEmits', searchFrom)
+    if (callIndex === -1) break
+
+    const previous = source[callIndex - 1]
+    const next = source[callIndex + 'defineEmits'.length]
+    if ((previous && /[\w$]/.test(previous)) || (next && /[\w$]/.test(next))) {
+      searchFrom = callIndex + 'defineEmits'.length
+      continue
+    }
+
+    let cursor = callIndex + 'defineEmits'.length
+    while (/\s/.test(source[cursor] ?? '')) cursor++
+
+    if (source[cursor] === '<') {
+      const typeEnd = findMatchingDelimiter(source, cursor, '<', '>')
+      if (typeEnd !== -1) {
+        for (const eventName of extractTypeEvents(source.slice(cursor + 1, typeEnd))) {
+          events.add(eventName)
+        }
+        cursor = typeEnd + 1
+        while (/\s/.test(source[cursor] ?? '')) cursor++
+      }
+    }
+
+    if (source[cursor] === '(') {
+      const argsEnd = findMatchingDelimiter(source, cursor, '(', ')')
+      if (argsEnd !== -1) {
+        const argument = source.slice(cursor + 1, argsEnd).trim()
+        if (argument.startsWith('[')) {
+          for (const eventName of extractStringLiteralArray(argument)) {
+            events.add(eventName)
+          }
+        }
+        searchFrom = argsEnd + 1
+        continue
+      }
+    }
+
+    searchFrom = cursor + 1
+  }
+
+  return [...events]
+}
+
+function inferComponentEvents(filePath: string): string[] {
+  try {
+    return extractDefineEmitsEvents(readFileSync(filePath, 'utf-8'))
+  } catch {
+    return []
+  }
 }
 
 function generateCasesModule(casePaths: string[], componentPaths: string[], root: string): string {
@@ -134,6 +322,9 @@ function generateCasesModule(casePaths: string[], componentPaths: string[], root
         `      title: ${JSON.stringify(entry.title)},`,
         `      component: ${entry.importName},`,
         `      variants: [{ id: 'default', title: 'Default', props: {} }],`,
+        ...(entry.events.length > 0
+          ? [`      events: ${JSON.stringify(entry.events)},`]
+          : []),
         `    },`,
         `    path: ${diagnosticPath},`,
         `  }`,
